@@ -16,9 +16,8 @@ sealed class Program
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
-            .With(new X11PlatformOptions { EnableMultiTouch = true, UseDBusMenu = true })
 #if DEBUG
             .LogToTrace()
 #endif
-            .WithInterFont();
+            ;
 }

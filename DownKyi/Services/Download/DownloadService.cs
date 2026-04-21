@@ -5,6 +5,9 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml;
+using System.Xml.Serialization;
+using DownKyi.Core.BiliApi;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.VideoStream.Models;
@@ -18,6 +21,7 @@ using DownKyi.Images;
 using DownKyi.Models;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Utils;
+using DownKyi.ViewModels;
 using DownKyi.ViewModels.DownloadManager;
 using Console = DownKyi.Core.Utils.Debugging.Console;
 
@@ -28,31 +32,35 @@ public abstract class DownloadService
     protected string Tag = "DownloadService";
 
     // protected TaskbarIcon _notifyIcon;
-    protected IDialogService dialogService;
-    protected ObservableCollection<DownloadingItem> downloadingList;
-    protected ObservableCollection<DownloadedItem> downloadedList;
+    protected readonly IDialogService? DialogService;
+    protected readonly ImmutableObservableCollection<DownloadingItem> DownloadingList;
+    protected readonly ImmutableObservableCollection<DownloadedItem> DownloadedList;
 
-    protected Task workTask;
-    protected CancellationTokenSource tokenSource;
-    protected CancellationToken cancellationToken;
-    protected List<Task> downloadingTasks = new();
+    protected Task? WorkTask;
+    protected CancellationTokenSource? TokenSource;
+    protected CancellationToken? CancellationToken;
+    protected readonly List<Task> DownloadingTasks = new();
 
-    protected readonly int retry = 5;
-    protected readonly string nullMark = "<null>";
+    protected const int Retry = 5;
+    protected const string NullMark = "<null>";
+
+    protected readonly DownloadStorageService DownloadStorageService = (DownloadStorageService)App.Current.Container.Resolve(typeof(DownloadStorageService));
 
     /// <summary>
     /// 初始化
     /// </summary>
-    /// <param name="downloading"></param>
+    /// <param name="downloadingList"></param>
+    /// <param name="downloadedList"></param>
+    /// <param name="dialogService"></param>
     /// <returns></returns>
-    public DownloadService(ObservableCollection<DownloadingItem> downloadingList, ObservableCollection<DownloadedItem> downloadedList, IDialogService dialogService)
+    public DownloadService(ImmutableObservableCollection<DownloadingItem> downloadingList, ImmutableObservableCollection<DownloadedItem> downloadedList, IDialogService? dialogService)
     {
-        this.downloadingList = downloadingList;
-        this.downloadedList = downloadedList;
-        this.dialogService = dialogService;
+        DownloadingList = downloadingList;
+        DownloadedList = downloadedList;
+        DialogService = dialogService;
     }
 
-    protected PlayUrlDashVideo BaseDownloadAudio(DownloadingItem downloading)
+    protected PlayUrlDashVideo? BaseDownloadAudio(DownloadingItem downloading)
     {
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
@@ -80,7 +88,7 @@ public abstract class DownloadService
         }
 
         // 根据音频id匹配
-        PlayUrlDashVideo downloadAudio = null;
+        PlayUrlDashVideo? downloadAudio = null;
         foreach (var audio in downloading.PlayUrl.Dash.Audio)
         {
             if (audio.Id == downloading.AudioCodec.Id)
@@ -112,7 +120,7 @@ public abstract class DownloadService
         return downloadAudio;
     }
 
-    protected PlayUrlDashVideo BaseDownloadVideo(DownloadingItem downloading)
+    protected VideoPlayUrlBasic? BaseDownloadVideo(DownloadingItem downloading)
     {
         // 更新状态显示
         downloading.DownloadStatusTitle = DictionaryResource.GetString("WhileDownloading");
@@ -123,35 +131,37 @@ public abstract class DownloadService
         // 下载速度
         downloading.SpeedDisplay = string.Empty;
 
-        // 如果没有Dash，返回null
-        if (downloading.PlayUrl == null || downloading.PlayUrl.Dash == null)
+        if (downloading.PlayUrl?.Dash?.Video?.Count > 0)
         {
-            return null;
-        }
-
-        // 如果Video列表没有内容，则返回null
-        if (downloading.PlayUrl.Dash.Video == null)
-        {
-            return null;
-        }
-        else if (downloading.PlayUrl.Dash.Video.Count == 0)
-        {
-            return null;
-        }
-
-        // 根据视频编码匹配
-        PlayUrlDashVideo downloadVideo = null;
-        foreach (var video in downloading.PlayUrl.Dash.Video)
-        {
-            Quality codecs = Constant.GetCodecIds().FirstOrDefault(t => t.Id == video.CodecId);
-            if (video.Id == downloading.Resolution.Id && codecs.Name == downloading.VideoCodecName)
+            foreach (var video in downloading.PlayUrl.Dash.Video)
             {
-                downloadVideo = video;
-                break;
+                var codecs = Constant.GetCodecIds().FirstOrDefault(t => t.Id == video.CodecId);
+                if (video.Id == downloading.Resolution.Id && codecs?.Name == downloading.VideoCodecName)
+                {
+                    return new VideoPlayUrlBasic
+                    {
+                        BackupUrl = video.BackupUrl,
+                        Codecs = video.Codecs,
+                        Id = video.Id,
+                        BaseUrl = video.BaseUrl
+                    };
+                }
             }
         }
 
-        return downloadVideo;
+        if (downloading?.PlayUrl?.Durl?.Count > 0)
+        {
+            var durl = downloading.PlayUrl.Durl.First();
+            return new VideoPlayUrlBasic
+            {
+                BackupUrl = durl.BackupUrl,
+                BaseUrl = durl.Url,
+                Codecs = downloading.PlayUrl.VideoCodecid.GetHashCode().ToString(),
+                Id = downloading.DownloadBase.Bvid.GetHashCode()
+            };
+        }
+
+        return null;
     }
 
     protected string BaseDownloadCover(DownloadingItem downloading, string coverUrl, string fileName)
@@ -164,25 +174,14 @@ public abstract class DownloadService
         // 下载速度
         downloading.SpeedDisplay = string.Empty;
 
-        // 查询、保存封面
-        var storageCover = new StorageCover();
-        var cover = storageCover.GetCover(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid, coverUrl);
-        if (cover == null)
-        {
-            return null;
-        }
-
         // 复制图片到指定位置
         try
         {
-            File.Copy(cover, fileName, true);
+            if (coverUrl == null) return null;
+            WebClient.DownloadFile(coverUrl, fileName);
 
             // 记录本次下载的文件
-            if (!downloading.Downloading.DownloadFiles.ContainsKey(coverUrl))
-            {
-                downloading.Downloading.DownloadFiles.Add(coverUrl, fileName);
-            }
-
+            downloading.Downloading.DownloadFiles.TryAdd(coverUrl, fileName);
             return fileName;
         }
         catch (Exception e)
@@ -205,7 +204,7 @@ public abstract class DownloadService
         downloading.SpeedDisplay = string.Empty;
 
         var title = $"{downloading.Name}";
-        var assFile = $"{downloading.DownloadBase.FilePath}.ass";
+        var assFile = $"{downloading.DownloadBase?.FilePath}.ass";
 
         // 记录本次下载的文件
         if (!downloading.Downloading.DownloadFiles.ContainsKey("danmaku"))
@@ -242,13 +241,14 @@ public abstract class DownloadService
         };
 
         Core.Danmaku2Ass.Bilibili.GetInstance()
-            .SetTopFilter(SettingsManager.GetInstance().GetDanmakuTopFilter() == AllowStatus.YES)
-            .SetBottomFilter(SettingsManager.GetInstance().GetDanmakuBottomFilter() == AllowStatus.YES)
-            .SetScrollFilter(SettingsManager.GetInstance().GetDanmakuScrollFilter() == AllowStatus.YES)
+            .SetTopFilter(SettingsManager.GetInstance().GetDanmakuTopFilter() == AllowStatus.Yes)
+            .SetBottomFilter(SettingsManager.GetInstance().GetDanmakuBottomFilter() == AllowStatus.Yes)
+            .SetScrollFilter(SettingsManager.GetInstance().GetDanmakuScrollFilter() == AllowStatus.Yes)
             .Create(downloading.DownloadBase.Avid, downloading.DownloadBase.Cid, subtitleConfig, assFile);
 
         return assFile;
     }
+
 
     protected List<string> BaseDownloadSubtitle(DownloadingItem downloading)
     {
@@ -262,8 +262,7 @@ public abstract class DownloadService
 
         var srtFiles = new List<string>();
 
-        var subRipTexts = VideoStream.GetSubtitle(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid,
-            downloading.DownloadBase.Cid);
+        var subRipTexts = VideoStream.GetSubtitle(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid);
         if (subRipTexts == null)
         {
             return null;
@@ -277,10 +276,7 @@ public abstract class DownloadService
                 File.WriteAllText(srtFile, subRip.SrtString);
 
                 // 记录本次下载的文件
-                if (!downloading.Downloading.DownloadFiles.ContainsKey("subtitle"))
-                {
-                    downloading.Downloading.DownloadFiles.Add("subtitle", srtFile);
-                }
+                downloading.Downloading.DownloadFiles.TryAdd("subtitle", srtFile);
 
                 srtFiles.Add(srtFile);
             }
@@ -291,8 +287,37 @@ public abstract class DownloadService
             }
         }
 
+        // subRipTexts中第一个复制为不带后缀的字幕,保证能自动匹配到字幕
+        if (srtFiles.Count > 0)
+        {
+            var srtFile = $"{downloading.DownloadBase.FilePath}.srt";
+            File.Copy(srtFiles[0], srtFile, true);
+            srtFiles.Add(srtFile);
+        }
+
         return srtFiles;
     }
+
+
+    protected void GenerateNfoFile(DownloadingItem downloading)
+    {
+        if (downloading.Metadata == null) return;
+        var serializer = new XmlSerializer(typeof(MovieMetadata));
+        var settings = new XmlWriterSettings { Indent = true };
+        try
+        {
+            string filePath = $"{downloading.DownloadBase.FilePath}.nfo";
+            using var writer = XmlWriter.Create(filePath, settings);
+#pragma warning disable IL2026
+            serializer.Serialize(writer, downloading.Metadata);
+#pragma warning restore IL2026
+        }
+        catch (Exception e)
+        {
+            /**/
+        }
+    }
+
 
     protected string BaseMixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid)
     {
@@ -312,9 +337,11 @@ public abstract class DownloadService
         var finalFile = $"{downloading.DownloadBase.FilePath}.mp4";
         if (videoUid == null)
         {
-            finalFile = SettingsManager.GetInstance().IsTranscodingAacToMp3() == AllowStatus.YES
+            finalFile = SettingsManager.GetInstance().GetIsTranscodingAacToMp3() == AllowStatus.Yes
                 ? $"{downloading.DownloadBase.FilePath}.mp3"
-                : $"{downloading.DownloadBase.FilePath}.aac";
+                : downloading.AudioCodec.Id == 30251
+                    ? $"{downloading.DownloadBase.FilePath}.flac"
+                    : $"{downloading.DownloadBase.FilePath}.aac";
         }
 
         // 合并音视频
@@ -334,6 +361,30 @@ public abstract class DownloadService
         return finalFile;
     }
 
+
+    private string ConcatVideos(DownloadingItem downloading, List<string> videoUids)
+    {
+        downloading.DownloadStatusTitle = DictionaryResource.GetString("ConcatVideos");
+        downloading.DownloadContent = DictionaryResource.GetString("DownloadingVideo");
+        downloading.DownloadingFileSize = string.Empty;
+        downloading.SpeedDisplay = string.Empty;
+
+        var finalFile = $"{downloading.DownloadBase.FilePath}.mp4";
+        FFMpeg.Instance.ConcatVideos(videoUids, finalFile, (x) => { });
+        if (File.Exists(finalFile))
+        {
+            var info = new FileInfo(finalFile);
+            downloading.FileSize = Format.FormatFileSize(info.Length);
+        }
+        else
+        {
+            downloading.FileSize = Format.FormatFileSize(0);
+        }
+
+        return finalFile;
+    }
+
+
     protected void BaseParse(DownloadingItem downloading)
     {
         // 更新状态显示
@@ -345,34 +396,34 @@ public abstract class DownloadService
         // 下载速度
         downloading.SpeedDisplay = string.Empty;
 
-        if (downloading.PlayUrl != null && downloading.Downloading.DownloadStatus == DownloadStatus.NOT_STARTED)
+        if (downloading.PlayUrl != null && downloading.Downloading.DownloadStatus == DownloadStatus.NotStarted)
         {
             // 设置下载状态
-            downloading.Downloading.DownloadStatus = DownloadStatus.DOWNLOADING;
+            downloading.Downloading.DownloadStatus = DownloadStatus.Downloading;
 
             return;
         }
 
         // 设置下载状态
-        downloading.Downloading.DownloadStatus = DownloadStatus.DOWNLOADING;
+        downloading.Downloading.DownloadStatus = DownloadStatus.Downloading;
 
         // 解析
         switch (downloading.Downloading.PlayStreamType)
         {
-            case PlayStreamType.VIDEO:
-                downloading.PlayUrl = SettingsManager.GetInstance().GetVideoParseType() switch
+            case PlayStreamType.Video:
+                downloading.PlayUrl ??= SettingsManager.GetInstance().GetVideoParseType() switch
                 {
                     0 => VideoStream.GetVideoPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid),
-                    1 => VideoStream.GetVideoPlayUrlWebPage(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Page),
-                    _ => null
+                    1 => VideoStream.GetVideoPlayUrlWebPage(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
+                        downloading.DownloadBase.Page),
+                    _ => throw new ArgumentException("Invalid video parse type. Valid values are: 0 (WebAPI) or 1 (WebPage).")
                 };
                 break;
-            case PlayStreamType.BANGUMI:
-                downloading.PlayUrl = VideoStream.GetBangumiPlayUrl(downloading.DownloadBase.Avid,
-                    downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid);
+            case PlayStreamType.Bangumi:
+                downloading.PlayUrl ??= VideoStream.GetBangumiPlayUrl(downloading.DownloadBase.Avid, downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid);
                 break;
-            case PlayStreamType.CHEESE:
-                downloading.PlayUrl = VideoStream.GetCheesePlayUrl(downloading.DownloadBase.Avid,
+            case PlayStreamType.Cheese:
+                downloading.PlayUrl ??= VideoStream.GetCheesePlayUrl(downloading.DownloadBase.Avid,
                     downloading.DownloadBase.Bvid, downloading.DownloadBase.Cid,
                     downloading.DownloadBase.EpisodeId);
                 break;
@@ -380,6 +431,9 @@ public abstract class DownloadService
                 break;
         }
     }
+
+    private readonly SemaphoreSlim _downloadSemaphore = new(SettingsManager.GetInstance()
+        .GetMaxCurrentDownloads());
 
     /// <summary>
     /// 执行任务
@@ -389,38 +443,22 @@ public abstract class DownloadService
         // 上次循环时正在下载的数量
         var lastDownloadingCount = 0;
 
-        while (true)
+        while (CancellationToken.HasValue &&
+               !CancellationToken.Value.IsCancellationRequested)
         {
-            var maxDownloading = SettingsManager.GetInstance().GetMaxCurrentDownloads();
-            var downloadingCount = 0;
-
             try
             {
-                downloadingTasks.RemoveAll((m) => m.IsCompleted);
-                foreach (var downloading in downloadingList)
-                {
-                    if (downloading.Downloading.DownloadStatus == DownloadStatus.DOWNLOADING)
-                    {
-                        downloadingCount++;
-                    }
-                }
+                DownloadingTasks.RemoveAll((m) => m.IsCompleted);
 
-                foreach (var downloading in downloadingList)
+                foreach (var downloading in DownloadingList)
                 {
-                    if (downloadingCount >= maxDownloading)
-                    {
-                        break;
-                    }
+                    if (downloading.Downloading.DownloadStatus is not (DownloadStatus.NotStarted or DownloadStatus.WaitForDownload))
+                        continue;
 
-                    // 开始下载
-                    if (downloading.Downloading.DownloadStatus == DownloadStatus.NOT_STARTED ||
-                        downloading.Downloading.DownloadStatus == DownloadStatus.WAIT_FOR_DOWNLOAD)
-                    {
-                        //这里需要立刻设置状态，否则如果SingleDownload没有及时执行，会重复创建任务
-                        downloading.Downloading.DownloadStatus = DownloadStatus.DOWNLOADING;
-                        downloadingTasks.Add(SingleDownload(downloading));
-                        downloadingCount++;
-                    }
+                    await _downloadSemaphore.WaitAsync(CancellationToken.Value);
+                    //这里需要立刻设置状态，否则如果SingleDownload没有及时执行，会重复创建任务
+                    downloading.Downloading.DownloadStatus = DownloadStatus.Downloading;
+                    DownloadingTasks.Add(SingleDownload(downloading).ContinueWith(_ => _downloadSemaphore.Release()));
                 }
             }
             catch (InvalidOperationException e)
@@ -435,7 +473,7 @@ public abstract class DownloadService
             }
 
             // 判断是否该结束线程，若为true，跳出while循环
-            if (cancellationToken.IsCancellationRequested)
+            if (CancellationToken?.IsCancellationRequested == true)
             {
                 Console.PrintLine($"{Tag}.DoWork() 下载服务结束，跳出while循环");
                 LogManager.Debug($"{Tag}.DoWork()", "下载服务结束");
@@ -443,19 +481,19 @@ public abstract class DownloadService
             }
 
             // 判断下载列表中的视频是否全部下载完成
-            if (lastDownloadingCount > 0 && downloadingList.Count == 0 && downloadedList.Count > 0)
+            if (lastDownloadingCount > 0 && DownloadingList.Count == 0 && DownloadedList.Count > 0)
             {
                 AfterDownload();
             }
 
-            lastDownloadingCount = downloadingList.Count;
+            lastDownloadingCount = DownloadingList.Count;
 
             // 降低CPU占用
             await Task.Delay(500);
         }
 
-        await Task.WhenAny(Task.WhenAll(downloadingTasks), Task.Delay(30000));
-        foreach (var tsk in downloadingTasks.FindAll((m) => !m.IsCompleted))
+        await Task.WhenAny(Task.WhenAll(DownloadingTasks), Task.Delay(30000));
+        foreach (var tsk in DownloadingTasks.FindAll((m) => !m.IsCompleted))
         {
             Console.PrintLine($"{Tag}.DoWork() 任务结束超时");
             LogManager.Debug($"{Tag}.DoWork()", "任务结束超时");
@@ -487,8 +525,8 @@ public abstract class DownloadService
                 Console.PrintLine(Tag, e.ToString());
                 LogManager.Debug(Tag, e.Message);
 
-                var alertService = new AlertService(dialogService);
-                var result = await alertService.ShowError($"{path}{DictionaryResource.GetString("DirectoryError")}");
+                var alertService = new AlertService(DialogService);
+                await alertService.ShowError($"{path}{DictionaryResource.GetString("DirectoryError")}");
 
                 return;
             }
@@ -496,7 +534,7 @@ public abstract class DownloadService
 
         try
         {
-            await Task.Run(() =>
+            await Task.Run(async () =>
             {
                 // 初始化
                 downloading.DownloadStatusTitle = string.Empty;
@@ -509,53 +547,150 @@ public abstract class DownloadService
                 // 暂停
                 Pause(downloading);
 
-                string? audioUid = null;
-                // 如果需要下载音频
-                if (downloading.DownloadBase.NeedDownloadContent["downloadAudio"])
+                var isMediaSuccess = true;
+
+                if (downloading.PlayUrl.Dash != null)
                 {
-                    //audioUid = DownloadAudio(downloading);
-                    for (int i = 0; i < retry; i++)
+                    string? audioUid = null;
+
+                    string? videoUid = null;
+                    // 如果需要下载音频
+                    if (downloading.DownloadBase.NeedDownloadContent["downloadAudio"])
                     {
-                        audioUid = DownloadAudio(downloading);
-                        if (audioUid != null && audioUid != nullMark)
+                        for (var i = 0; i < Retry; i++)
                         {
-                            break;
+                            audioUid = DownloadAudio(downloading);
+                            if (audioUid != null && audioUid != NullMark)
+                            {
+                                break;
+                            }
                         }
                     }
-                }
 
-                if (audioUid == nullMark)
-                {
-                    DownloadFailed(downloading);
-                    return;
-                }
-
-                // 暂停
-                Pause(downloading);
-
-                string? videoUid = null;
-                // 如果需要下载视频
-                if (downloading.DownloadBase.NeedDownloadContent["downloadVideo"])
-                {
-                    //videoUid = DownloadVideo(downloading);
-                    for (var i = 0; i < retry; i++)
+                    if (audioUid == NullMark)
                     {
-                        videoUid = DownloadVideo(downloading);
-                        if (videoUid != null && videoUid != nullMark)
+                        DownloadFailed(downloading);
+                        return;
+                    }
+
+                    Pause(downloading);
+
+
+                    // 如果需要下载视频
+                    if (downloading.DownloadBase.NeedDownloadContent["downloadVideo"])
+                    {
+                        //videoUid = DownloadVideo(downloading);
+                        for (var i = 0; i < Retry; i++)
                         {
-                            break;
+                            videoUid = DownloadVideo(downloading);
+                            if (videoUid != null && videoUid != NullMark)
+                            {
+                                break;
+                            }
                         }
                     }
-                }
 
-                if (videoUid == nullMark)
+                    if (videoUid == NullMark)
+                    {
+                        DownloadFailed(downloading);
+                        return;
+                    }
+
+                    Pause(downloading);
+
+                    // 混流
+                    var outputMedia = string.Empty;
+                    if (downloading.DownloadBase.NeedDownloadContent["downloadAudio"] ||
+                        downloading.DownloadBase.NeedDownloadContent["downloadVideo"])
+                    {
+                        outputMedia = MixedFlow(downloading, audioUid, videoUid);
+                    }
+
+                    // 检测音频、视频是否下载成功
+
+                    if (downloading.DownloadBase.NeedDownloadContent["downloadAudio"] ||
+                        downloading.DownloadBase.NeedDownloadContent["downloadVideo"])
+                    {
+                        // 只有下载音频不下载视频时才输出aac
+                        // 只要下载视频就输出mp4
+                        // 成功
+                        isMediaSuccess = File.Exists(outputMedia);
+                    }
+                }
+                else if (downloading.PlayUrl.Durl != null)
                 {
-                    DownloadFailed(downloading);
-                    return;
+                    if (downloading.DownloadBase.NeedDownloadContent["downloadAudio"] ||
+                        downloading.DownloadBase.NeedDownloadContent["downloadVideo"])
+                    {
+                        var durls = downloading.PlayUrl.Durl.ToList();
+                        var downloadStatus = durls
+                            .Select((durl, index) => new { Durl = durl, Index = index })
+                            .ToDictionary(x => x.Index, x => new { Durl = x.Durl, Result = string.Empty });
+
+                        for (int i = 0; i < durls.Count; i++)
+                        {
+                            downloading.PlayUrl.Durl = new List<PlayUrlDurl> { durls[i] };
+                            var result = DownloadVideo(downloading);
+                            downloadStatus[i] = new { Durl = durls[i], Result = result ?? NullMark };
+                        }
+
+                        int retryCount = 0;
+                        while (retryCount < Retry && downloadStatus.Values
+                                   .Any(x => x.Result == NullMark))
+                        {
+                            var toRetry = downloadStatus
+                                .Where(x => retryCount == 0 || x.Value.Result == NullMark)
+                                .ToList();
+
+                            foreach (var item in toRetry)
+                            {
+                                downloading.PlayUrl.Durl = new List<PlayUrlDurl> { item.Value.Durl };
+                                var result = DownloadVideo(downloading);
+                                downloadStatus[item.Key] = new { item.Value.Durl, Result = result };
+                            }
+
+                            retryCount++;
+                            await Task.Delay(1000);
+                        }
+
+                        if (downloadStatus.Values.Any(x => x.Result == NullMark))
+                        {
+                            DownloadFailed(downloading);
+                            return;
+                        }
+
+                        Pause(downloading);
+
+                        if (durls.Count > 1)
+                        {
+                            var output = ConcatVideos(downloading, downloadStatus.Values
+                                .Select(x => x.Result).ToList());
+
+                            isMediaSuccess = File.Exists(output);
+                        }
+                        else
+                        {
+                            var outputMedia = MixedFlow(downloading, null, downloadStatus.First().Value.Result);
+                            isMediaSuccess = File.Exists(outputMedia);
+                        }
+                    }
+
+                    if (downloading.DownloadBase.NeedDownloadContent["downloadAudio"] &&
+                        !downloading.DownloadBase.NeedDownloadContent["downloadVideo"])
+                    {
+                        //音频分离？
+                    }
+
+                    Pause(downloading);
                 }
 
-                // 暂停
-                Pause(downloading);
+
+                //nfo
+                if (SettingsManager.GetInstance()
+                    .GetVideoContent().GenerateMovieMetadata)
+                {
+                    GenerateNfoFile(downloading);
+                }
 
                 string? outputDanmaku = null;
                 // 如果需要下载弹幕
@@ -596,13 +731,6 @@ public abstract class DownloadService
                 // 暂停
                 Pause(downloading);
 
-                // 混流
-                var outputMedia = string.Empty;
-                if (downloading.DownloadBase.NeedDownloadContent["downloadAudio"] || downloading.DownloadBase.NeedDownloadContent["downloadVideo"])
-                {
-                    outputMedia = MixedFlow(downloading, audioUid, videoUid);
-                }
-
                 // 这里本来只有IsExist，没有pause，不知道怎么处理
                 // 是否存在
                 //isExist = IsExist(downloading);
@@ -611,36 +739,12 @@ public abstract class DownloadService
                 //    return;
                 //}
 
-                // 检测音频、视频是否下载成功
-                var isMediaSuccess = true;
-                if (downloading.DownloadBase.NeedDownloadContent["downloadAudio"] || downloading.DownloadBase.NeedDownloadContent["downloadVideo"])
-                {
-                    // 只有下载音频不下载视频时才输出aac
-                    // 只要下载视频就输出mp4
-                    if (File.Exists(outputMedia))
-                    {
-                        // 成功
-                        isMediaSuccess = true;
-                    }
-                    else
-                    {
-                        isMediaSuccess = false;
-                    }
-                }
-
                 // 检测弹幕是否下载成功
                 var isDanmakuSuccess = true;
                 if (downloading.DownloadBase.NeedDownloadContent["downloadDanmaku"])
                 {
-                    if (File.Exists(outputDanmaku))
-                    {
-                        // 成功
-                        isDanmakuSuccess = true;
-                    }
-                    else
-                    {
-                        isDanmakuSuccess = false;
-                    }
+                    // 成功
+                    isDanmakuSuccess = File.Exists(outputDanmaku);
                 }
 
                 // 检测字幕是否下载成功
@@ -653,7 +757,7 @@ public abstract class DownloadService
                     }
                     else
                     {
-                        foreach (string subtitle in outputSubtitles)
+                        foreach (var subtitle in outputSubtitles)
                         {
                             if (!File.Exists(subtitle))
                             {
@@ -699,11 +803,13 @@ public abstract class DownloadService
                     Downloaded = downloaded
                 };
 
+                DownloadStorageService.RemoveDownloading(downloading);
+                DownloadStorageService.AddDownloaded(downloadedItem);
                 App.PropertyChangeAsync(() =>
                 {
                     // 加入到下载完成list中，并从下载中list去除
-                    downloadedList.Add(downloadedItem);
-                    downloadingList.Remove(downloading);
+                    DownloadedList.Add(downloadedItem);
+                    DownloadingList.Remove(downloading);
 
                     // 下载完成列表排序
                     var finishedSort = SettingsManager.GetInstance().GetDownloadFinishedSort();
@@ -731,7 +837,7 @@ public abstract class DownloadService
         downloading.SpeedDisplay = string.Empty;
         downloading.Progress = 0;
 
-        downloading.Downloading.DownloadStatus = DownloadStatus.DOWNLOAD_FAILED;
+        downloading.Downloading.DownloadStatus = DownloadStatus.DownloadFailed;
         downloading.StartOrPause = ButtonIcon.Instance().Retry;
         downloading.StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
     }
@@ -741,7 +847,7 @@ public abstract class DownloadService
     /// </summary>
     /// <param name="coverUrl"></param>
     /// <returns></returns>
-    protected string GetImageExtension(string coverUrl)
+    protected string GetImageExtension(string? coverUrl)
     {
         if (coverUrl == null)
         {
@@ -750,7 +856,7 @@ public abstract class DownloadService
 
         // 图片的扩展名
         var temp = coverUrl.Split('.');
-        var fileExtension = temp[temp.Length - 1];
+        var fileExtension = temp[^1];
         return fileExtension;
     }
 
@@ -762,20 +868,20 @@ public abstract class DownloadService
         var operation = SettingsManager.GetInstance().GetAfterDownloadOperation();
         switch (operation)
         {
-            case AfterDownloadOperation.NONE:
+            case AfterDownloadOperation.None:
                 // 没有操作
                 break;
-            case AfterDownloadOperation.OPEN_FOLDER:
+            case AfterDownloadOperation.OpenFolder:
                 // 打开文件夹
                 break;
-            case AfterDownloadOperation.CLOSE_APP:
+            case AfterDownloadOperation.CloseApp:
                 // 关闭程序
                 App.PropertyChangeAsync(() =>
                 {
                     // System.Windows.Application.Current.Shutdown();
                 });
                 break;
-            case AfterDownloadOperation.CLOSE_SYSTEM:
+            case AfterDownloadOperation.CloseSystem:
                 // 关机
                 // Process.Start("shutdown.exe", "-s");
                 break;
@@ -790,35 +896,31 @@ public abstract class DownloadService
     protected async Task BaseEndTask()
     {
         // 结束任务
-        tokenSource.Cancel();
+        TokenSource?.Cancel();
 
-        await workTask;
+        if (WorkTask != null) await WorkTask;
 
         //先简单等待一下
 
         // 下载数据存储服务
-        var downloadStorageService = new DownloadStorageService();
+        var downloadStorageService = (DownloadStorageService)App.Current.Container.Resolve(typeof(DownloadStorageService));
         // 保存数据
-        foreach (var item in downloadingList)
+        foreach (var item in DownloadingList)
         {
             switch (item.Downloading.DownloadStatus)
             {
-                case DownloadStatus.NOT_STARTED:
+                case DownloadStatus.NotStarted:
+                case DownloadStatus.WaitForDownload:
+                case DownloadStatus.PauseStarted:
+                case DownloadStatus.Pause:
                     break;
-                case DownloadStatus.WAIT_FOR_DOWNLOAD:
-                    break;
-                case DownloadStatus.PAUSE_STARTED:
-                    break;
-                case DownloadStatus.PAUSE:
-                    break;
-                case DownloadStatus.DOWNLOADING:
+                case DownloadStatus.Downloading:
                     // TODO 添加设置让用户选择重启后是否自动开始下载
-                    item.Downloading.DownloadStatus = DownloadStatus.WAIT_FOR_DOWNLOAD;
+                    item.Downloading.DownloadStatus = DownloadStatus.WaitForDownload;
                     //item.Downloading.DownloadStatus = DownloadStatus.PAUSE;
                     break;
-                case DownloadStatus.DOWNLOAD_SUCCEED:
-                case DownloadStatus.DOWNLOAD_FAILED:
-                    break;
+                case DownloadStatus.DownloadSucceed:
+                case DownloadStatus.DownloadFailed:
                 default:
                     break;
             }
@@ -827,11 +929,6 @@ public abstract class DownloadService
 
             downloadStorageService.UpdateDownloading(item);
         }
-
-        foreach (var item in downloadedList)
-        {
-            downloadStorageService.UpdateDownloaded(item);
-        }
     }
 
     /// <summary>
@@ -839,12 +936,12 @@ public abstract class DownloadService
     /// </summary>
     protected void BaseStart()
     {
-        tokenSource = new CancellationTokenSource();
-        cancellationToken = tokenSource.Token;
+        TokenSource = new CancellationTokenSource();
+        CancellationToken = TokenSource.Token;
         // _notifyIcon = new TaskbarIcon();
         // _notifyIcon.IconSource = new BitmapImage(new Uri("pack://application:,,,/Resources/favicon.ico"));
 
-        workTask = Task.Run(DoWork);
+        WorkTask = Task.Run(DoWork);
     }
 
     #region 抽象接口函数

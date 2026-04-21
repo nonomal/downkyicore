@@ -1,6 +1,7 @@
 ﻿using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Logging;
+using DownKyi.Core.Storage;
 using Newtonsoft.Json;
 using Console = DownKyi.Core.Utils.Debugging.Console;
 
@@ -42,14 +43,23 @@ public static class UserInfo
     /// <returns></returns>
     public static UserInfoForSpace? GetUserInfoForSpace(long mid)
     {
-        var parameters = new Dictionary<string, object>
+        var parameters = new Dictionary<string, object?>
         {
             { "mid", mid }
         };
+
+        if (!File.Exists(StorageManager.GetLogin()))
+        {
+            parameters.Add("dm_img_str", "V2ViR0wgMS");
+            parameters.Add("dm_img_list", "[]");
+            parameters.Add("dm_cover_img_str", "QU5HTEUgKE5WSURJQSwgTlZJRElBIEdlRm9yY2UgR1RYIDk4MCBEaXJlY3QzRDExIHZzXzVfMCBwc181XzApLCBvciBzaW1pbGFyR29vZ2xlIEluYy4gKE5WSURJQS");
+            parameters.Add("dm_img_inter", "{\"ds\":[],\"wh\":[0,0,0],\"of\":[0,0,0]}");
+        }
+
         var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(parameters));
         var url = $"https://api.bilibili.com/x/space/wbi/acc/info?{query}";
         const string referer = "https://www.bilibili.com";
-        var response = WebClient.RequestWeb(url, referer, needRandomBvuid3: true);
+        var response = WebClient.RequestWeb(url, referer);
 
         try
         {

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 using Avalonia.Threading;
 using DownKyi.Core.BiliApi.Bangumi;
@@ -8,7 +9,6 @@ using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Models;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.Settings;
-using DownKyi.Core.Storage;
 using DownKyi.Core.Utils;
 using DownKyi.Utils;
 using DownKyi.ViewModels.PageViewModels;
@@ -105,11 +105,12 @@ public class BangumiInfoService : IInfoService
                 Avid = episode.Aid,
                 Bvid = episode.Bvid,
                 Cid = episode.Cid,
-                EpisodeId = -1,
+                EpisodeId = episode.EpisodeId,
                 FirstFrame = episode.Cover,
                 Order = order,
                 Name = name,
-                Duration = "N/A"
+                Duration = "N/A",
+                LazyTags = new Lazy<List<string>>(_bangumiSeason.Styles?.ToList())
             };
 
             // UP主信息
@@ -135,10 +136,10 @@ public class BangumiInfoService : IInfoService
             // 文件命名中的时间格式
             var timeFormat = SettingsManager.GetInstance().GetFileNamePartTimeFormat();
             // 视频发布时间
-            var startTime = TimeZone.CurrentTimeZone.ToLocalTime(new DateTime(1970, 1, 1)); // 当地时区
+            var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
             var dateTime = startTime.AddSeconds(episode.PubTime);
             page.PublishTime = dateTime.ToString(timeFormat);
-
+            page.OriginalPublishTime = dateTime;
             pages.Add(page);
         }
 
@@ -198,11 +199,12 @@ public class BangumiInfoService : IInfoService
                     Avid = episode.Aid,
                     Bvid = episode.Bvid,
                     Cid = episode.Cid,
-                    EpisodeId = -1,
+                    EpisodeId = episode.EpisodeId,
                     FirstFrame = episode.Cover,
                     Order = order,
                     Name = name,
-                    Duration = "N/A"
+                    Duration = "N/A",
+                    LazyTags = new Lazy<List<string>>(_bangumiSeason.Styles?.ToList())
                 };
 
                 // UP主信息
@@ -228,10 +230,10 @@ public class BangumiInfoService : IInfoService
                 // 文件命名中的时间格式
                 var timeFormat = SettingsManager.GetInstance().GetFileNamePartTimeFormat();
                 // 视频发布时间
-                var startTime = TimeZone.CurrentTimeZone.ToLocalTime(new DateTime(1970, 1, 1)); // 当地时区
+                var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
                 var dateTime = startTime.AddSeconds(episode.PubTime);
+                page.OriginalPublishTime = dateTime;
                 page.PublishTime = dateTime.ToString(timeFormat);
-
                 pages.Add(page);
             }
 
@@ -256,7 +258,7 @@ public class BangumiInfoService : IInfoService
         var playUrl = VideoStream.GetBangumiPlayUrl(page.Avid, page.Bvid, page.Cid);
         Dispatcher.UIThread.Invoke(() => Utils.VideoPageInfo(playUrl, page));
     }
-
+    
     /// <summary>
     /// 获取视频信息
     /// </summary>
@@ -271,25 +273,17 @@ public class BangumiInfoService : IInfoService
         // 查询、保存封面
         // 将SeasonId保存到avid字段中
         // 每集封面的cid保存到cid字段，EpisodeId保存到bvid字段中
-        var storageCover = new StorageCover();
         var coverUrl = _bangumiSeason.Cover;
-        var cover = storageCover.GetCover(_bangumiSeason.SeasonId, "bangumi", -1, coverUrl);
 
         // 获取用户头像
         string upName;
-        string? header;
         if (_bangumiSeason.UpInfo != null)
         {
             upName = _bangumiSeason.UpInfo.Name;
-
-            var storageHeader = new StorageHeader();
-            header = storageHeader.GetHeader(_bangumiSeason.UpInfo.Mid, _bangumiSeason.UpInfo.Name,
-                _bangumiSeason.UpInfo.Avatar);
         }
         else
         {
             upName = "";
-            header = null;
         }
 
         // 为videoInfoView赋值
@@ -298,14 +292,13 @@ public class BangumiInfoService : IInfoService
         {
             videoInfoView.CoverUrl = coverUrl;
 
-            videoInfoView.Cover = cover == null ? null : ImageHelper.LoadFromResource(new Uri(cover));
             videoInfoView.Title = _bangumiSeason.Title;
 
             // 分区id
             videoInfoView.TypeId = BangumiType.TypeId[_bangumiSeason.Type];
 
             videoInfoView.VideoZone = DictionaryResource.GetString(BangumiType.Type[_bangumiSeason.Type]);
-
+            
             videoInfoView.PlayNumber = Format.FormatNumber(_bangumiSeason.Stat.Views);
             videoInfoView.DanmakuNumber = Format.FormatNumber(_bangumiSeason.Stat.Danmakus);
             videoInfoView.LikeNumber = Format.FormatNumber(_bangumiSeason.Stat.Likes);
@@ -315,18 +308,10 @@ public class BangumiInfoService : IInfoService
             videoInfoView.ReplyNumber = Format.FormatNumber(_bangumiSeason.Stat.Reply);
             videoInfoView.Description = _bangumiSeason.Evaluate;
 
+            videoInfoView.Score = _bangumiSeason.Rating?.Score;
             videoInfoView.UpName = upName;
-            if (header != null)
-            {
-                var storageHeader = new StorageHeader();
-                videoInfoView.UpHeader = storageHeader.GetHeaderThumbnail(header, 48, 48);
-
-                videoInfoView.UpperMid = _bangumiSeason.UpInfo.Mid;
-            }
-            else
-            {
-                videoInfoView.UpHeader = null;
-            }
+            videoInfoView.UpHeader = _bangumiSeason.UpInfo?.Avatar;
+            videoInfoView.UpperMid = _bangumiSeason.UpInfo?.Mid ?? -1;
         });
 
         return videoInfoView;

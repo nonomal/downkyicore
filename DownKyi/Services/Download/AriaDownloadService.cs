@@ -17,6 +17,7 @@ using DownKyi.Images;
 using DownKyi.Models;
 using DownKyi.PrismExtension.Dialog;
 using DownKyi.Utils;
+using DownKyi.ViewModels;
 using DownKyi.ViewModels.DownloadManager;
 
 namespace DownKyi.Services.Download;
@@ -24,9 +25,9 @@ namespace DownKyi.Services.Download;
 public class AriaDownloadService : DownloadService, IDownloadService
 {
     public AriaDownloadService(
-        ObservableCollection<DownloadingItem> downloadingList,
-        ObservableCollection<DownloadedItem> downloadedList,
-        IDialogService dialogService) :
+        ImmutableObservableCollection<DownloadingItem> downloadingList,
+        ImmutableObservableCollection<DownloadedItem> downloadedList,
+        IDialogService? dialogService) :
         base(downloadingList, downloadedList, dialogService)
     {
         Tag = "AriaDownloadService";
@@ -64,7 +65,18 @@ public class AriaDownloadService : DownloadService, IDownloadService
     /// <param name="downloading"></param>
     /// <param name="downloadVideo"></param>
     /// <returns></returns>
-    private string DownloadVideo(DownloadingItem downloading, PlayUrlDashVideo downloadVideo)
+    private string DownloadVideo(DownloadingItem downloading, VideoPlayUrlBasic? downloadVideo)
+    {
+        return DownloadVideo(downloading,new PlayUrlDashVideo
+        {
+            Id = downloadVideo.Id,
+            Codecs = downloadVideo.Codecs,
+            BaseUrl = downloadVideo.BaseUrl,
+            BackupUrl = downloadVideo.BackupUrl
+        } );
+    }
+
+    private string DownloadVideo(DownloadingItem downloading, PlayUrlDashVideo? downloadVideo)
     {
         // 如果为空，说明没有匹配到可下载的音频视频
         if (downloadVideo == null)
@@ -130,8 +142,8 @@ public class AriaDownloadService : DownloadService, IDownloadService
         }
 
         // 启用https
-        var useSSL = SettingsManager.GetInstance().UseSSL();
-        if (useSSL == AllowStatus.YES)
+        var useSSL = SettingsManager.GetInstance().GetUseSsl();
+        if (useSSL == AllowStatus.Yes)
         {
             for (var i = 0; i < urls.Count; i++)
             {
@@ -165,7 +177,7 @@ public class AriaDownloadService : DownloadService, IDownloadService
             case DownloadResult.FAILED:
             case DownloadResult.ABORT:
             default:
-                return nullMark;
+                return NullMark;
         }
     }
 
@@ -210,7 +222,7 @@ public class AriaDownloadService : DownloadService, IDownloadService
     /// <returns></returns>
     public override string MixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid)
     {
-        if (videoUid == nullMark)
+        if (videoUid == NullMark)
         {
             return null;
         }
@@ -257,7 +269,7 @@ public class AriaDownloadService : DownloadService, IDownloadService
         // 设置aria host
         AriaClient.SetHost();
         // 设置aria listenPort
-        AriaClient.SetListenPort();
+        AriaClient.SetListenPort(SettingsManager.GetInstance().GetAriaListenPort());
 
         // 启动Aria服务器
         StartAriaServer();
@@ -273,10 +285,10 @@ public class AriaDownloadService : DownloadService, IDownloadService
     /// <exception cref="OperationCanceledException"></exception>
     protected override void Pause(DownloadingItem downloading)
     {
-        cancellationToken.ThrowIfCancellationRequested();
+        CancellationToken?.ThrowIfCancellationRequested();
 
         downloading.DownloadStatusTitle = DictionaryResource.GetString("Pausing");
-        if (downloading.Downloading.DownloadStatus == DownloadStatus.PAUSE)
+        if (downloading.Downloading.DownloadStatus == DownloadStatus.Pause)
         {
             throw new OperationCanceledException("Stop thread by pause");
         }
@@ -296,7 +308,7 @@ public class AriaDownloadService : DownloadService, IDownloadService
     /// <returns></returns>
     private async Task<bool> IsExist(DownloadingItem downloading)
     {
-        var isExist = downloadingList.Contains(downloading);
+        var isExist = DownloadingList.Contains(downloading);
         if (isExist)
         {
             return true;
@@ -343,8 +355,6 @@ public class AriaDownloadService : DownloadService, IDownloadService
             MaxOverallDownloadLimit =
                 SettingsManager.GetInstance().GetAriaMaxOverallDownloadLimit() * 1024L, // 输入的单位是KB/s，所以需要乘以1024
             MaxDownloadLimit = SettingsManager.GetInstance().GetAriaMaxDownloadLimit() * 1024L, // 输入的单位是KB/s，所以需要乘以1024
-            MaxOverallUploadLimit = 0,
-            MaxUploadLimit = 0,
             ContinueDownload = true,
             FileAllocation = SettingsManager.GetInstance().GetAriaFileAllocation(),
             Headers = header
@@ -361,7 +371,7 @@ public class AriaDownloadService : DownloadService, IDownloadService
         // 显示错误信息
         if (errorMessage != null && errorMessage.Contains("ERROR"))
         {
-            var alertService = new AlertService(dialogService);
+            var alertService = new AlertService(DialogService);
             var result = await alertService.ShowMessage(SystemIcon.Instance().Error,
                 $"Aria2 {DictionaryResource.GetString("Error")}",
                 errorMessage,
@@ -442,7 +452,7 @@ public class AriaDownloadService : DownloadService, IDownloadService
             };
 
             // 如果设置了代理，则增加HttpProxy
-            if (SettingsManager.GetInstance().IsAriaHttpProxy() == AllowStatus.YES)
+            if (SettingsManager.GetInstance().GetIsAriaHttpProxy() == AllowStatus.Yes)
             {
                 option.HttpProxy =
                     $"http://{SettingsManager.GetInstance().GetAriaHttpProxy()}:{SettingsManager.GetInstance().GetAriaHttpProxyListenPort()}";
@@ -470,15 +480,15 @@ public class AriaDownloadService : DownloadService, IDownloadService
         ariaManager.DownloadFinish += AriaDownloadFinish;
         return ariaManager.GetDownloadStatus(downloading.Downloading.Gid, new Action(() =>
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            CancellationToken?.ThrowIfCancellationRequested();
             switch (downloading.Downloading.DownloadStatus)
             {
-                case DownloadStatus.PAUSE:
+                case DownloadStatus.Pause:
                     var ariaPause = AriaClient.PauseAsync(downloading.Downloading.Gid);
                     // 通知UI，并阻塞当前线程
                     Pause(downloading);
                     break;
-                case DownloadStatus.DOWNLOADING:
+                case DownloadStatus.Downloading:
                     break;
             }
         }));
@@ -487,10 +497,10 @@ public class AriaDownloadService : DownloadService, IDownloadService
     private void AriaTellStatus(long totalLength, long completedLength, long speed, string gid)
     {
         // 当前的下载视频
-        DownloadingItem video = null;
+        DownloadingItem? video = null;
         try
         {
-            video = downloadingList.FirstOrDefault(it => it.Downloading.Gid == gid);
+            video = DownloadingList.FirstOrDefault(it => it.Downloading.Gid == gid);
         }
         catch (InvalidOperationException e)
         {

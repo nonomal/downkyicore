@@ -38,7 +38,12 @@ public class BangumiSeason : BaseModel
     [JsonProperty("positive")] public BangumiPositive Positive { get; set; }
 
     // publish
-    // rating
+   
+    [JsonProperty("rating")] public BangumiRating? Rating { get; set; }
+    
+    
+    [JsonProperty("styles")] public string[] Styles { get; set; }
+    
     // record
     // rights
     [JsonProperty("season_id")] public long SeasonId { get; set; }
@@ -61,5 +66,5 @@ public class BangumiSeason : BaseModel
     [JsonProperty("title")] public string Title { get; set; }
     [JsonProperty("total")] public int Total { get; set; }
     [JsonProperty("type")] public int Type { get; set; }
-    [JsonProperty("up_info")] public BangumiUpInfo UpInfo { get; set; }
+    [JsonProperty("up_info")] public BangumiUpInfo? UpInfo { get; set; }
 }

@@ -16,6 +16,7 @@ using DownKyi.Models;
 using DownKyi.Utils;
 using DownKyi.ViewModels.DownloadManager;
 using DownKyi.PrismExtension.Dialog;
+using DownKyi.ViewModels;
 
 namespace DownKyi.Services.Download;
 
@@ -24,9 +25,9 @@ namespace DownKyi.Services.Download;
 /// </summary>
 public class CustomAriaDownloadService : DownloadService, IDownloadService
 {
-    public CustomAriaDownloadService(ObservableCollection<DownloadingItem> downloadingList,
-        ObservableCollection<DownloadedItem> downloadedList,
-        IDialogService dialogService
+    public CustomAriaDownloadService(ImmutableObservableCollection<DownloadingItem> downloadingList,
+        ImmutableObservableCollection<DownloadedItem> downloadedList,
+        IDialogService? dialogService
     ) : base(downloadingList, downloadedList, dialogService)
     {
         Tag = "AriaDownloadService";
@@ -41,7 +42,7 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
     /// <returns></returns>
     public override string DownloadAudio(DownloadingItem downloading)
     {
-        PlayUrlDashVideo downloadAudio = BaseDownloadAudio(downloading);
+        var downloadAudio = BaseDownloadAudio(downloading);
 
         return DownloadVideo(downloading, downloadAudio);
     }
@@ -53,9 +54,20 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
     /// <returns></returns>
     public override string DownloadVideo(DownloadingItem downloading)
     {
-        PlayUrlDashVideo downloadVideo = BaseDownloadVideo(downloading);
+        var downloadVideo = BaseDownloadVideo(downloading);
 
         return DownloadVideo(downloading, downloadVideo);
+    }
+
+    private string DownloadVideo(DownloadingItem downloading, VideoPlayUrlBasic? downloadVideo)
+    {
+        return DownloadVideo(downloading, new PlayUrlDashVideo
+        {
+            Id = downloadVideo.Id,
+            Codecs = downloadVideo.Codecs,
+            BaseUrl = downloadVideo.BaseUrl,
+            BackupUrl = downloadVideo.BackupUrl
+        });
     }
 
     /// <summary>
@@ -64,7 +76,7 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
     /// <param name="downloading"></param>
     /// <param name="downloadVideo"></param>
     /// <returns></returns>
-    private string DownloadVideo(DownloadingItem downloading, PlayUrlDashVideo downloadVideo)
+    private string DownloadVideo(DownloadingItem downloading, PlayUrlDashVideo? downloadVideo)
     {
         // 如果为空，说明没有匹配到可下载的音频视频
         if (downloadVideo == null)
@@ -130,8 +142,8 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
         }
 
         // 启用https
-        AllowStatus useSSL = SettingsManager.GetInstance().UseSSL();
-        if (useSSL == AllowStatus.YES)
+        AllowStatus useSSL = SettingsManager.GetInstance().GetUseSsl();
+        if (useSSL == AllowStatus.Yes)
         {
             for (int i = 0; i < urls.Count; i++)
             {
@@ -165,7 +177,7 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
             case DownloadResult.FAILED:
             case DownloadResult.ABORT:
             default:
-                return nullMark;
+                return NullMark;
         }
     }
 
@@ -207,7 +219,7 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
     /// <returns></returns>
     public override string MixedFlow(DownloadingItem downloading, string? audioUid, string? videoUid)
     {
-        if (videoUid == nullMark)
+        if (videoUid == NullMark)
         {
             return null;
         }
@@ -267,10 +279,10 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
     /// <exception cref="OperationCanceledException"></exception>
     protected override void Pause(DownloadingItem downloading)
     {
-        cancellationToken.ThrowIfCancellationRequested();
+        CancellationToken?.ThrowIfCancellationRequested();
 
         downloading.DownloadStatusTitle = DictionaryResource.GetString("Pausing");
-        if (downloading.Downloading.DownloadStatus == DownloadStatus.PAUSE)
+        if (downloading.Downloading.DownloadStatus == DownloadStatus.Pause)
         {
             throw new OperationCanceledException("Stop thread by pause");
         }
@@ -290,7 +302,7 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
     /// <returns></returns>
     private async Task<bool> IsExist(DownloadingItem downloading)
     {
-        bool isExist = downloadingList.Contains(downloading);
+        bool isExist = DownloadingList.Contains(downloading);
         if (isExist)
         {
             return true;
@@ -397,15 +409,15 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
         ariaManager.DownloadFinish += AriaDownloadFinish;
         return ariaManager.GetDownloadStatus(downloading.Downloading.Gid, new Action(() =>
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            CancellationToken?.ThrowIfCancellationRequested();
             switch (downloading.Downloading.DownloadStatus)
             {
-                case DownloadStatus.PAUSE:
+                case DownloadStatus.Pause:
                     Task<AriaPause> ariaPause = AriaClient.PauseAsync(downloading.Downloading.Gid);
                     // 通知UI，并阻塞当前线程
                     Pause(downloading);
                     break;
-                case DownloadStatus.DOWNLOADING:
+                case DownloadStatus.Downloading:
                     break;
             }
         }));
@@ -417,7 +429,7 @@ public class CustomAriaDownloadService : DownloadService, IDownloadService
         DownloadingItem video = null;
         try
         {
-            video = downloadingList.FirstOrDefault(it => it.Downloading.Gid == gid);
+            video = DownloadingList.FirstOrDefault(it => it.Downloading.Gid == gid);
         }
         catch (InvalidOperationException e)
         {

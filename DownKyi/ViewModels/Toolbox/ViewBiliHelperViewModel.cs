@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using DownKyi.Commands;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.Logging;
 using DownKyi.Utils;
@@ -39,9 +40,9 @@ public class ViewBiliHelperViewModel : ViewModelBase
         set => SetProperty(ref _danmakuUserId, value);
     }
 
-    private string _userMid;
+    private string? _userMid;
 
-    public string UserMid
+    public string? UserMid
     {
         get => _userMid;
         set => SetProperty(ref _userMid, value);
@@ -68,7 +69,7 @@ public class ViewBiliHelperViewModel : ViewModelBase
     /// </summary>
     private async void ExecuteAvidCommand(string parameter)
     {
-        if (parameter == null)
+        if (string.IsNullOrEmpty(parameter))
         {
             return;
         }
@@ -84,7 +85,7 @@ public class ViewBiliHelperViewModel : ViewModelBase
             return;
         }
 
-        await Task.Run(() => { Bvid = BvId.Av2Bv((ulong)avid); });
+        await Task.Run(() => { Bvid = BvId.Av2Bv(avid); });
     }
 
     // 输入bvid事件
@@ -98,7 +99,7 @@ public class ViewBiliHelperViewModel : ViewModelBase
     /// <param name="parameter"></param>
     private async void ExecuteBvidCommand(string parameter)
     {
-        if (parameter == null)
+        if (string.IsNullOrEmpty(parameter))
         {
             return;
         }
@@ -116,17 +117,17 @@ public class ViewBiliHelperViewModel : ViewModelBase
     }
 
     // 访问网页事件
-    private DelegateCommand? _gotoWebCommand;
+    private AsyncDelegateCommand? _gotoWebCommand;
 
-    public DelegateCommand GotoWebCommand => _gotoWebCommand ??= new DelegateCommand(ExecuteGotoWebCommand);
+    public AsyncDelegateCommand GotoWebCommand => _gotoWebCommand ??= new AsyncDelegateCommand(ExecuteGotoWebCommand);
 
     /// <summary>
     /// 访问网页事件
     /// </summary>
-    private void ExecuteGotoWebCommand()
+    private async Task ExecuteGotoWebCommand()
     {
         var url = $"https://www.bilibili.com/video/{Bvid}";
-        PlatformHelper.Open(url);
+        await PlatformHelper.OpenUrl(url, EventAggregator);
     }
 
     // 查询弹幕发送者事件
@@ -156,14 +157,14 @@ public class ViewBiliHelperViewModel : ViewModelBase
     }
 
     // 访问用户空间事件
-    private DelegateCommand? _visitUserSpaceCommand;
+    private AsyncDelegateCommand? _visitUserSpaceCommand;
 
-    public DelegateCommand VisitUserSpaceCommand => _visitUserSpaceCommand ??= new DelegateCommand(ExecuteVisitUserSpaceCommand);
+    public AsyncDelegateCommand VisitUserSpaceCommand => _visitUserSpaceCommand ??= new AsyncDelegateCommand(ExecuteVisitUserSpaceCommand);
 
     /// <summary>
     /// 访问用户空间事件
     /// </summary>
-    private void ExecuteVisitUserSpaceCommand()
+    private async Task ExecuteVisitUserSpaceCommand()
     {
         if (UserMid == null)
         {
@@ -171,7 +172,7 @@ public class ViewBiliHelperViewModel : ViewModelBase
         }
 
         var userSpace = $"https://space.bilibili.com/{UserMid}";
-        PlatformHelper.Open(userSpace);
+        await PlatformHelper.OpenUrl(userSpace, EventAggregator);
     }
 
     #endregion

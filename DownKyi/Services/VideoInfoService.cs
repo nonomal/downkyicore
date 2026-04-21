@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using Avalonia.Media.Imaging;
+using System.Linq;
 using Avalonia.Threading;
 using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Models;
@@ -10,7 +9,6 @@ using DownKyi.Core.BiliApi.Video.Models;
 using DownKyi.Core.BiliApi.VideoStream;
 using DownKyi.Core.BiliApi.Zone;
 using DownKyi.Core.Settings;
-using DownKyi.Core.Storage;
 using DownKyi.Core.Utils;
 using DownKyi.ViewModels.PageViewModels;
 using VideoPage = DownKyi.ViewModels.PageViewModels.VideoPage;
@@ -47,12 +45,7 @@ public class VideoInfoService : IInfoService
     /// <returns></returns>
     public List<VideoPage>? GetVideoPages()
     {
-        if (_videoView == null)
-        {
-            return null;
-        }
-
-        if (_videoView.Pages == null)
+        if (_videoView?.Pages == null)
         {
             return null;
         }
@@ -99,7 +92,13 @@ public class VideoInfoService : IInfoService
                 Order = order,
                 Name = name,
                 Duration = "N/A",
-                Page = page.Page
+                Page = page.Page,
+                LazyTags = new Lazy<List<string>?>(() =>
+                {
+                    return VideoInfo.GetBiliTagInfo(_videoView.Bvid, page.Cid)
+                        ?.Select(x => x.TagName)
+                        .ToList();
+                })
             };
 
             // UP主信息
@@ -115,10 +114,11 @@ public class VideoInfoService : IInfoService
             }
 
             // 文件命名中的时间格式
-            string timeFormat = SettingsManager.GetInstance().GetFileNamePartTimeFormat();
+            var timeFormat = SettingsManager.GetInstance().GetFileNamePartTimeFormat();
             // 视频发布时间
-            DateTime startTime = TimeZone.CurrentTimeZone.ToLocalTime(new DateTime(1970, 1, 1)); // 当地时区
-            DateTime dateTime = startTime.AddSeconds(_videoView.Pubdate);
+            var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
+            var dateTime = startTime.AddSeconds(_videoView.Pubdate);
+            videoPage.OriginalPublishTime = dateTime;
             videoPage.PublishTime = dateTime.ToString(timeFormat);
 
             videoPages.Add(videoPage);
@@ -133,41 +133,18 @@ public class VideoInfoService : IInfoService
     /// <returns></returns>
     public List<VideoSection>? GetVideoSections(bool noUgc = false)
     {
-        if (_videoView == null)
-        {
-            return null;
-        }
-
+        if (!(_videoView?.UgcSeason?.Sections?.Count > 0)) return null;
         var videoSections = new List<VideoSection>();
 
         // 不需要ugc内容
         if (noUgc)
         {
-            videoSections.Add(new VideoSection
-            {
-                Id = 0,
-                Title = "default",
-                IsSelected = true,
-                VideoPages = GetVideoPages()
-            });
-
+            videoSections.Add(CreateDefaultVideoSection());
             return videoSections;
         }
 
-        if (_videoView.UgcSeason == null)
-        {
-            return null;
-        }
-
-        if (_videoView.UgcSeason.Sections == null)
-        {
-            return null;
-        }
-
-        if (_videoView.UgcSeason.Sections.Count == 0)
-        {
-            return null;
-        }
+        var timeFormat = SettingsManager.GetInstance().GetFileNamePartTimeFormat();
+        var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local);
 
         foreach (var section in _videoView.UgcSeason.Sections)
         {
@@ -175,58 +152,111 @@ public class VideoInfoService : IInfoService
             var order = 0;
             foreach (var episode in section.Episodes)
             {
-                order++;
-                var page = new VideoPage
+                if (episode.Pages?.Count > 1)
                 {
-                    Avid = episode.Aid,
-                    Bvid = episode.Bvid,
-                    Cid = episode.Cid,
-                    EpisodeId = -1,
-                    FirstFrame = episode.Arc.Pic,
-                    Order = order,
-                    Name = episode.Title,
-                    Duration = "N/A",
-                    // UP主信息
-                    Owner = _videoView.Owner,
-                    Page = episode.Page.Page
-                };
-
-                if (page.Owner == null)
-                {
-                    page.Owner = new VideoOwner
-                    {
-                        Name = "",
-                        Face = "",
-                        Mid = -1,
-                    };
+                    var videoSection = CreateVideoSectionFromEpisode(section, episode, startTime, timeFormat);
+                    videoSections.Add(videoSection);
                 }
-
-                // 文件命名中的时间格式
-                var timeFormat = SettingsManager.GetInstance().GetFileNamePartTimeFormat();
-                // 视频发布时间
-                var startTime = TimeZone.CurrentTimeZone.ToLocalTime(new DateTime(1970, 1, 1)); // 当地时区
-                var dateTime = startTime.AddSeconds(_videoView.Pubdate);
-                page.PublishTime = dateTime.ToString(timeFormat);
-                // 这里的发布时间有问题，
-                // 如果是合集，也会执行这里，
-                // 但是发布时间是入口视频的，不是所有视频的
-                // TODO 修复
-
-                pages.Add(page);
+                else
+                {
+                    pages.Add(GenerateVideoPage(episode, ++order, startTime, timeFormat));
+                }
             }
 
-            var videoSection = new VideoSection
+            if (pages.Count <= 0) continue;
             {
-                Id = section.Id,
-                Title = section.Title,
-                VideoPages = pages
-            };
-            videoSections.Add(videoSection);
+                var videoSection = new VideoSection
+                {
+                    Id = section.Id,
+                    Title = section.Title,
+                    VideoPages = pages
+                };
+                videoSections.Add(videoSection);
+            }
         }
 
-        videoSections[0].IsSelected = true;
+        if (videoSections.Count > 0)
+        {
+            videoSections[0].IsSelected = true;
+        }
 
         return videoSections;
+    }
+
+    private VideoSection CreateDefaultVideoSection()
+    {
+        return new VideoSection
+        {
+            Id = 0,
+            Title = "default",
+            IsSelected = true,
+            VideoPages = GetVideoPages()
+        };
+    }
+
+    private VideoSection CreateVideoSectionFromEpisode(UgcSection section, UgcEpisode episode, DateTime startTime, string timeFormat)
+    {
+        var videoSection = new VideoSection
+        {
+            Id = section.Id,
+            Title = episode.Title,
+            VideoPages = new List<VideoPage>()
+        };
+        var order = 1;
+        foreach (var p in episode.Pages)
+        {
+            var dateTime = startTime.AddSeconds(episode.Arc.Ctime);
+            videoSection.VideoPages.Add(new VideoPage
+            {
+                Avid = episode.Aid,
+                Bvid = episode.Bvid,
+                Cid = p.Cid,
+                EpisodeId = -1,
+                FirstFrame = episode.Arc.Pic,
+                Order = order++,
+                Name = p.Part,
+                Duration = "N/A",
+                Owner = _videoView.Owner,
+                Page = p.Page,
+                PublishTime = dateTime.ToString(timeFormat),
+                OriginalPublishTime = dateTime,
+                LazyTags = new Lazy<List<string>?>(() =>
+                {
+                    return VideoInfo.GetBiliTagInfo(episode.Bvid, p.Cid)
+                        ?.Select(x => x.TagName)
+                        .ToList();
+                })
+            });
+        }
+
+        return videoSection;
+    }
+
+    private VideoPage GenerateVideoPage(UgcEpisode episode, int order, DateTime startTime, string timeFormat)
+    {
+        var page = new VideoPage
+        {
+            Avid = episode.Aid,
+            Bvid = episode.Bvid,
+            Cid = episode.Cid,
+            EpisodeId = -1,
+            FirstFrame = episode.Arc.Pic,
+            Order = order,
+            Name = episode.Title,
+            Duration = "N/A",
+            Owner = _videoView?.Owner ?? new VideoOwner { Name = "", Face = "", Mid = -1 },
+            Page = episode.Page.Page,
+            LazyTags = new Lazy<List<string>?>(() =>
+            {
+                return VideoInfo.GetBiliTagInfo(episode.Bvid, episode.Cid)
+                    ?.Select(x => x.TagName)
+                    .ToList();
+            })
+        };
+        var dateTime = startTime.AddSeconds(episode.Arc.Ctime);
+        page.PublishTime = dateTime.ToString(timeFormat);
+        page.OriginalPublishTime = dateTime;
+        return page;
     }
 
     /// <summary>
@@ -238,7 +268,7 @@ public class VideoInfoService : IInfoService
         var playUrl = SettingsManager.GetInstance().GetVideoParseType() switch
         {
             0 => VideoStream.GetVideoPlayUrl(page.Avid, page.Bvid, page.Cid),
-            1 => VideoStream.GetVideoPlayUrlWebPage(page.Avid, page.Bvid, page.Page),
+            1 => VideoStream.GetVideoPlayUrlWebPage(page.Avid, page.Bvid, page.Cid, page.Page),
             _ => null
         };
 
@@ -257,9 +287,7 @@ public class VideoInfoService : IInfoService
         }
 
         // 查询、保存封面
-        var storageCover = new StorageCover();
         var coverUrl = _videoView.Pic;
-        var cover = storageCover.GetCover(_videoView.Aid, _videoView.Bvid, _videoView.Cid, coverUrl);
 
         // 分区
         var videoZone = string.Empty;
@@ -284,17 +312,13 @@ public class VideoInfoService : IInfoService
 
         // 获取用户头像
         string upName;
-        string header;
-        if (_videoView.Owner != null)
+        if (_videoView?.Owner != null)
         {
             upName = _videoView.Owner.Name;
-            var storageHeader = new StorageHeader();
-            header = storageHeader.GetHeader(_videoView.Owner.Mid, _videoView.Owner.Name, _videoView.Owner.Face);
         }
         else
         {
             upName = "";
-            header = null;
         }
 
         // 为videoInfoView赋值
@@ -302,8 +326,6 @@ public class VideoInfoService : IInfoService
         App.PropertyChangeAsync(() =>
         {
             videoInfoView.CoverUrl = coverUrl;
-
-            videoInfoView.Cover = cover == null ? null : new Bitmap(cover);
             videoInfoView.Title = _videoView.Title;
 
             // 分区id
@@ -311,7 +333,7 @@ public class VideoInfoService : IInfoService
 
             videoInfoView.VideoZone = videoZone;
 
-            var startTime = TimeZone.CurrentTimeZone.ToLocalTime(new DateTime(1970, 1, 1)); // 当地时区
+            var startTime = TimeZoneInfo.ConvertTimeFromUtc(new DateTime(1970, 1, 1), TimeZoneInfo.Local); // 当地时区
             var dateTime = startTime.AddSeconds(_videoView.Pubdate);
             videoInfoView.CreateTime = dateTime.ToString("yyyy-MM-dd HH:mm:ss");
 
@@ -323,19 +345,10 @@ public class VideoInfoService : IInfoService
             videoInfoView.ShareNumber = Format.FormatNumber(_videoView.Stat.Share);
             videoInfoView.ReplyNumber = Format.FormatNumber(_videoView.Stat.Reply);
             videoInfoView.Description = _videoView.Desc;
+            videoInfoView.UpHeader = _videoView.Owner.Face ?? "";
+            videoInfoView.UpperMid = _videoView.Owner.Mid;
 
             videoInfoView.UpName = upName;
-            if (header != null)
-            {
-                var storageHeader = new StorageHeader();
-                videoInfoView.UpHeader = storageHeader.GetHeaderThumbnail(header, 48, 48);
-
-                videoInfoView.UpperMid = _videoView.Owner.Mid;
-            }
-            else
-            {
-                videoInfoView.UpHeader = null;
-            }
         });
 
         return videoInfoView;

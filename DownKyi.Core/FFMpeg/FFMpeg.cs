@@ -3,6 +3,7 @@ using DownKyi.Core.Settings;
 using FFMpegCore;
 using FFMpegCore.Enums;
 using FFMpegCore.Helpers;
+using FFMpegCore.Pipes;
 
 namespace DownKyi.Core.FFMpeg;
 
@@ -17,8 +18,7 @@ public class FFMpeg
 
     private FFMpeg()
     {
-        GlobalFFOptions.Configure(new FFOptions
-            { BinaryFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg") });
+        GlobalFFOptions.Configure(new FFOptions { BinaryFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg") });
         FFMpegHelper.VerifyFFMpegExists(GlobalFFOptions.Current);
     }
 
@@ -51,10 +51,9 @@ public class FFMpeg
                 options => options.WithCustomArgument("-strict -2").WithVideoCodec("copy").WithAudioCodec("copy").ForceFormat("mp4")
             );
         }
-
         if (video == null || !File.Exists(video))
         {
-            if (SettingsManager.GetInstance().IsTranscodingAacToMp3() == AllowStatus.YES)
+            if (SettingsManager.GetInstance().GetIsTranscodingAacToMp3() == AllowStatus.Yes)
             {
                 arguments = FFMpegArguments.FromFileInput(audio).OutputToFile(
                     destVideo,
@@ -152,7 +151,7 @@ public class FFMpeg
     /// <param name="action">输出信息</param>
     public void ExtractVideo(string video, string destVideo, Action<string> action)
     {
-        FFMpegArguments.FromFileInput(video)
+         FFMpegArguments.FromFileInput(video)
             .OutputToFile(
                 destVideo,
                 true,
@@ -163,5 +162,78 @@ public class FFMpeg
             .NotifyOnOutput(action.Invoke)
             .NotifyOnError(action.Invoke)
             .ProcessSynchronously(false);
+    }
+
+    
+    public async Task<MemoryStream> ExtractVideoFrame(string inputPath,TimeSpan timestamp)
+    {
+        var ms = new MemoryStream();
+        await FFMpegArguments
+            .FromFileInput(inputPath, false, options => options.Seek(timestamp))
+            .OutputToPipe(new StreamPipeSink(ms), options => options
+                .WithFrameOutputCount(1)
+                .ForceFormat("image2")
+                .WithVideoCodec("mjpeg")
+            )
+            .NotifyOnError(x => Console.WriteLine(x))
+            .ProcessAsynchronously(false);
+        ms.Position = 0;
+        return ms;
+    }
+
+    /// <summary>
+    /// 合并多个FLV视频片段为一个完整视频
+    /// </summary>
+    /// <param name="inputFlvs">FLV片段路径列表(按顺序)</param>
+    /// <param name="outputVideo">输出视频路径</param>
+    /// <param name="action">进度回调</param>
+    /// <returns>是否成功</returns>
+    public bool ConcatVideos(List<string> inputFlvs, string outputVideo, Action<string> action)
+    {
+        try
+        {
+            if (inputFlvs == null || inputFlvs.Count == 0)
+            {
+                return false;
+            }
+
+            // 验证所有输入文件都存在
+            foreach (var video in inputFlvs)
+            {
+                if (!File.Exists(video))
+                {
+                    action?.Invoke($"文件不存在: {video}");
+                    return false;
+                }
+            }
+
+            LogManager.Debug(Tag, $"开始合并 {inputFlvs.Count} 个视频到 {outputVideo}");
+
+
+            var listFile = Path.Combine(Path.GetTempPath(), $"flvlist_{DateTime.Now:yyyyMMddHHmmss}.txt");
+            File.WriteAllLines(listFile, inputFlvs.Select(f => $"file '{f.Replace("'", "'\\''")}'"));
+
+            FFMpegArguments
+             .FromFileInput(listFile, false, options => options
+                 .WithCustomArgument("-f concat -safe 0"))
+             .OutputToFile(outputVideo, true, options => options
+                 .WithVideoCodec("libx264")  
+                 .WithAudioCodec("aac")   
+                 .WithCustomArgument("-movflags +faststart")
+                 .WithCustomArgument("-avoid_negative_ts make_zero")
+             )
+             .NotifyOnOutput(action.Invoke)
+             .NotifyOnError(action.Invoke)
+             .ProcessSynchronously(false);
+
+            try { File.Delete(listFile); } catch {  }
+            LogManager.Debug(Tag, "视频合并完成");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            LogManager.Error(Tag, ex);
+            return false;
+        }
     }
 }

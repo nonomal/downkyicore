@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <OutputType>WinExe</OutputType>
         <TargetFramework>net6.0</TargetFramework>
@@ -9,27 +9,27 @@
         <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
         <ApplicationIcon>Resources\favicon.ico</ApplicationIcon>
     </PropertyGroup>
-
+    
     <ItemGroup>
-        <AvaloniaResource Include="Resources\**" />
+        <AvaloniaResource Include="Resources\**"/>
     </ItemGroup>
 
-
     <ItemGroup>
-        <PackageReference Include="Avalonia" Version="11.1.999-cibuild0042781-beta" />
-        <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.1.999-cibuild0042781-beta" />
-        <PackageReference Include="Avalonia.Desktop" Version="11.1.999-cibuild0042781-beta" />
-        <PackageReference Include="Avalonia.Fonts.Inter" Version="11.1.999-cibuild0042781-beta" />
+        <PackageReference Include="Avalonia"/>
+        <PackageReference Include="Avalonia.Controls.DataGrid"/>
+        <PackageReference Include="Avalonia.Desktop"/>
         <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
-        <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" Version="11.1.999-cibuild0042781-beta" />
-        <PackageReference Include="Avalonia.Themes.Simple" Version="11.1.999-cibuild0042781-beta" />
-        <PackageReference Include="Avalonia.Xaml.Behaviors" Version="11.0.6" />
-        <PackageReference Include="Prism.Avalonia" Version="8.1.97.11000" />
-        <PackageReference Include="Prism.DryIoc.Avalonia" Version="8.1.97.11000" />
+        <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics"/>
+        <PackageReference Include="Avalonia.Themes.Simple"/>
+        <PackageReference Include="Downloader"/>
+        <PackageReference Include="Prism.Avalonia"/>
+        <PackageReference Include="Prism.DryIoc.Avalonia"/>
+        <PackageReference Include="Xaml.Behaviors"/>
+        <PackageReference Include="System.Formats.Nrbf" />
     </ItemGroup>
 
 
     <ItemGroup>
-      <ProjectReference Include="..\DownKyi.Core\DownKyi.Core.csproj" />
+        <ProjectReference Include="..\DownKyi.Core\DownKyi.Core.csproj"/>
     </ItemGroup>
 </Project>

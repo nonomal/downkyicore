@@ -39,16 +39,28 @@ public static class ListHelper
     /// <param name="list"></param>
     /// <param name="item"></param>
     /// <param name="index"></param>
-    public static void InsertUnique<T>(List<T> list, T item, int index)
+    /// <param name="currentSelection"></param>
+    public static void InsertUnique<T>(Collection<T> list, T item, int index, ref T currentSelection)
     {
-        if (!list.Exists(t => t.Equals(item)))
+        if (!list.Contains(item))
         {
             list.Insert(index, item);
         }
         else
         {
+            var previousSelection = currentSelection;
             list.Remove(item);
             list.Insert(index, item);
+            if (previousSelection != null && previousSelection.Equals(item))
+            {
+                currentSelection = previousSelection;
+            }
         }
+    }
+
+    public static void InsertUnique<T>(Collection<T> list, T item, int index)
+    {
+        T defaultSelection = default;
+        InsertUnique(list, item, index, ref defaultSelection); 
     }
 }

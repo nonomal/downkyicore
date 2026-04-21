@@ -1,28 +1,27 @@
-﻿namespace DownKyi.Core.Settings;
+namespace DownKyi.Core.Settings;
 
 public partial class SettingsManager
 {
     // 是否接收测试版更新
-    private readonly AllowStatus isReceiveBetaVersion = AllowStatus.NO;
+    private const AllowStatus IsReceiveBetaVersion = AllowStatus.No;
 
     // 是否在启动时自动检查更新
-    private readonly AllowStatus autoUpdateWhenLaunch = AllowStatus.YES;
+    private const AllowStatus AutoUpdateWhenLaunch = AllowStatus.Yes;
 
     /// <summary>
     /// 获取是否接收测试版更新
     /// </summary>
     /// <returns></returns>
-    public AllowStatus IsReceiveBetaVersion()
+    public AllowStatus GetIsReceiveBetaVersion()
     {
-        appSettings = GetSettings();
-        if (appSettings.About.IsReceiveBetaVersion == AllowStatus.NONE)
+        if (_appSettings.About.IsReceiveBetaVersion == AllowStatus.None)
         {
             // 第一次获取，先设置默认值
-            IsReceiveBetaVersion(isReceiveBetaVersion);
-            return isReceiveBetaVersion;
+            SetIsReceiveBetaVersion(IsReceiveBetaVersion);
+            return IsReceiveBetaVersion;
         }
 
-        return appSettings.About.IsReceiveBetaVersion;
+        return _appSettings.About.IsReceiveBetaVersion;
     }
 
     /// <summary>
@@ -30,10 +29,12 @@ public partial class SettingsManager
     /// </summary>
     /// <param name="isReceiveBetaVersion"></param>
     /// <returns></returns>
-    public bool IsReceiveBetaVersion(AllowStatus isReceiveBetaVersion)
+    public bool SetIsReceiveBetaVersion(AllowStatus isReceiveBetaVersion)
     {
-        appSettings.About.IsReceiveBetaVersion = isReceiveBetaVersion;
-        return SetSettings();
+        return SetProperty(
+            _appSettings.About.IsReceiveBetaVersion,
+            isReceiveBetaVersion,
+            v => _appSettings.About.IsReceiveBetaVersion = v);
     }
 
     /// <summary>
@@ -42,15 +43,14 @@ public partial class SettingsManager
     /// <returns></returns>
     public AllowStatus GetAutoUpdateWhenLaunch()
     {
-        appSettings = GetSettings();
-        if (appSettings.About.AutoUpdateWhenLaunch == AllowStatus.NONE)
+        if (_appSettings.About.AutoUpdateWhenLaunch == AllowStatus.None)
         {
             // 第一次获取，先设置默认值
-            SetAutoUpdateWhenLaunch(autoUpdateWhenLaunch);
-            return autoUpdateWhenLaunch;
+            SetAutoUpdateWhenLaunch(AutoUpdateWhenLaunch);
+            return AutoUpdateWhenLaunch;
         }
 
-        return appSettings.About.AutoUpdateWhenLaunch;
+        return _appSettings.About.AutoUpdateWhenLaunch;
     }
 
     /// <summary>
@@ -60,7 +60,32 @@ public partial class SettingsManager
     /// <returns></returns>
     public bool SetAutoUpdateWhenLaunch(AllowStatus autoUpdateWhenLaunch)
     {
-        appSettings.About.AutoUpdateWhenLaunch = autoUpdateWhenLaunch;
-        return SetSettings();
+        return SetProperty(
+            _appSettings.About.AutoUpdateWhenLaunch,
+            autoUpdateWhenLaunch,
+            v => _appSettings.About.AutoUpdateWhenLaunch = v);
     }
+
+    public bool SetSkipVersionOnLaunch(string skipVersionOnLaunch)
+    {
+        if (Version.TryParse(skipVersionOnLaunch,out var _))
+        {
+            return SetProperty(
+                _appSettings.About.SkipVersionOnLaunch,
+                skipVersionOnLaunch,
+                v => _appSettings.About.SkipVersionOnLaunch = v);
+        }
+
+        return false;
+    }
+
+    public string GetSkipVersionOnLaunch()
+    {
+        if (Version.TryParse(_appSettings.About.SkipVersionOnLaunch,out var _))
+        {
+            return _appSettings.About.SkipVersionOnLaunch;
+        }
+        return string.Empty;
+    }
+    
 }

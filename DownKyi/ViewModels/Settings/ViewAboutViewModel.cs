@@ -1,11 +1,19 @@
-﻿using DownKyi.Core.Settings;
+﻿using System;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Input;
+using DownKyi.Commands;
+using DownKyi.Core.Settings;
 using DownKyi.Events;
 using DownKyi.Models;
-using DownKyi.PrismExtension.Dialog;
+using DownKyi.Services;
 using DownKyi.Utils;
+using DownKyi.ViewModels.Dialogs;
 using Prism.Commands;
 using Prism.Events;
 using Prism.Regions;
+using Prism.Services.Dialogs;
+using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels.Settings;
 
@@ -56,7 +64,7 @@ public class ViewAboutViewModel : ViewModelBase
     {
         #region 属性初始化
 
-        AppInfo app = new AppInfo();
+        var app = new AppInfo();
         AppName = app.Name;
         AppVersion = app.VersionName;
 
@@ -74,12 +82,12 @@ public class ViewAboutViewModel : ViewModelBase
         _isOnNavigatedTo = true;
 
         // 是否接收测试版更新
-        var isReceiveBetaVersion = SettingsManager.GetInstance().IsReceiveBetaVersion();
-        IsReceiveBetaVersion = isReceiveBetaVersion == AllowStatus.YES;
+        var isReceiveBetaVersion = SettingsManager.GetInstance().GetIsReceiveBetaVersion();
+        IsReceiveBetaVersion = isReceiveBetaVersion == AllowStatus.Yes;
 
         // 是否在启动时自动检查更新
         var isAutoUpdateWhenLaunch = SettingsManager.GetInstance().GetAutoUpdateWhenLaunch();
-        AutoUpdateWhenLaunch = isAutoUpdateWhenLaunch == AllowStatus.YES;
+        AutoUpdateWhenLaunch = isAutoUpdateWhenLaunch == AllowStatus.Yes;
 
         _isOnNavigatedTo = false;
     }
@@ -87,196 +95,182 @@ public class ViewAboutViewModel : ViewModelBase
     #region 命令申明
 
     // 访问主页事件
-    private DelegateCommand? _appNameCommand;
+    private AsyncDelegateCommand? _appNameCommand;
 
-    public DelegateCommand AppNameCommand => _appNameCommand ??= new DelegateCommand(ExecuteAppNameCommand);
+    public AsyncDelegateCommand AppNameCommand => _appNameCommand ??= new AsyncDelegateCommand(ExecuteAppNameCommand);
 
     /// <summary>
     /// 访问主页事件
     /// </summary>
-    private void ExecuteAppNameCommand()
+    private async Task ExecuteAppNameCommand()
     {
-        PlatformHelper.Open("https://github.com/yaobiao131/downkyicore/releases");
+        await PlatformHelper.OpenUrl("https://github.com/yaobiao131/downkyicore/releases", EventAggregator);
     }
 
     // 检查更新事件
-    private DelegateCommand? _checkUpdateCommand;
+    private ICommand? _checkUpdateCommand;
 
-    public DelegateCommand CheckUpdateCommand => _checkUpdateCommand ??= new DelegateCommand(ExecuteCheckUpdateCommand);
+    public ICommand CheckUpdateCommand => _checkUpdateCommand ??= new AsyncDelegateCommand(ExecuteCheckUpdateCommand);
+
 
     /// <summary>
     /// 检查更新事件
     /// </summary>
-    private void ExecuteCheckUpdateCommand()
+    private async Task ExecuteCheckUpdateCommand()
     {
-        //eventAggregator.GetEvent<MessageEvent>().Publish("开始查找更新，请稍后~");
-        EventAggregator.GetEvent<MessageEvent>().Publish("请前往主页下载最新版~");
+        var service = new VersionCheckerService(App.RepoOwner, App.RepoName, _isReceiveBetaVersion);
+        var release = await service.GetLatestReleaseAsync();
+        if (GitHubRelease.IsNullOrEmpty(release))
+        {
+            EventAggregator.GetEvent<MessageEvent>().Publish("检查失败，请稍后重试~");
+            return;
+        }
+
+        if (service.IsNewVersionAvailable(release!.TagName))
+        {
+            await DialogService?.ShowDialogAsync(NewVersionAvailableDialogViewModel.Tag, new
+                DialogParameters { { "release", release } })!;
+        }
+        else
+        {
+            EventAggregator.GetEvent<MessageEvent>().Publish("已是最新版~");
+        }
     }
 
     // 意见反馈事件
-    private DelegateCommand? _feedbackCommand;
+    private AsyncDelegateCommand? _feedbackCommand;
 
-    public DelegateCommand FeedbackCommand => _feedbackCommand ??= new DelegateCommand(ExecuteFeedbackCommand);
+    public AsyncDelegateCommand FeedbackCommand => _feedbackCommand ??= new AsyncDelegateCommand(ExecuteFeedbackCommand);
 
     /// <summary>
     /// 意见反馈事件
     /// </summary>
-    private void ExecuteFeedbackCommand()
+    private async Task ExecuteFeedbackCommand()
     {
-        PlatformHelper.Open("https://github.com/yaobiao131/downkyicore/issues");
+        await PlatformHelper.OpenUrl("https://github.com/yaobiao131/downkyicore/issues", EventAggregator);
     }
 
     // 是否接收测试版更新事件
     private DelegateCommand? _receiveBetaVersionCommand;
 
-    public DelegateCommand ReceiveBetaVersionCommand =>
-        _receiveBetaVersionCommand ??= new DelegateCommand(ExecuteReceiveBetaVersionCommand);
+    public DelegateCommand ReceiveBetaVersionCommand => _receiveBetaVersionCommand ??= new DelegateCommand(ExecuteReceiveBetaVersionCommand);
 
     /// <summary>
     /// 是否接收测试版更新事件
     /// </summary>
     private void ExecuteReceiveBetaVersionCommand()
     {
-        AllowStatus isReceiveBetaVersion = IsReceiveBetaVersion ? AllowStatus.YES : AllowStatus.NO;
+        var isReceiveBetaVersion = IsReceiveBetaVersion ? AllowStatus.Yes : AllowStatus.No;
 
-        bool isSucceed = SettingsManager.GetInstance().IsReceiveBetaVersion(isReceiveBetaVersion);
+        var isSucceed = SettingsManager.GetInstance().SetIsReceiveBetaVersion(isReceiveBetaVersion);
         PublishTip(isSucceed);
     }
 
     // 是否在启动时自动检查更新事件
     private DelegateCommand? _autoUpdateWhenLaunchCommand;
 
-    public DelegateCommand AutoUpdateWhenLaunchCommand =>
-        _autoUpdateWhenLaunchCommand ??= new DelegateCommand(ExecuteAutoUpdateWhenLaunchCommand);
+    public DelegateCommand AutoUpdateWhenLaunchCommand => _autoUpdateWhenLaunchCommand ??= new DelegateCommand(ExecuteAutoUpdateWhenLaunchCommand);
 
     /// <summary>
     /// 是否在启动时自动检查更新事件
     /// </summary>
     private void ExecuteAutoUpdateWhenLaunchCommand()
     {
-        AllowStatus isAutoUpdateWhenLaunch = AutoUpdateWhenLaunch ? AllowStatus.YES : AllowStatus.NO;
+        var isAutoUpdateWhenLaunch = AutoUpdateWhenLaunch ? AllowStatus.Yes : AllowStatus.No;
 
-        bool isSucceed = SettingsManager.GetInstance().SetAutoUpdateWhenLaunch(isAutoUpdateWhenLaunch);
+        var isSucceed = SettingsManager.GetInstance().SetAutoUpdateWhenLaunch(isAutoUpdateWhenLaunch);
         PublishTip(isSucceed);
     }
 
-    // Brotli.NET许可证查看事件
-    private DelegateCommand brotliLicenseCommand;
-
-    public DelegateCommand BrotliLicenseCommand => brotliLicenseCommand ??
-                                                   (brotliLicenseCommand =
-                                                       new DelegateCommand(ExecuteBrotliLicenseCommand));
-
-    /// <summary>
-    /// Brotli.NET许可证查看事件
-    /// </summary>
-    private void ExecuteBrotliLicenseCommand()
-    {
-        PlatformHelper.Open("https://licenses.nuget.org/MIT");
-    }
-
     // Google.Protobuf许可证查看事件
-    private DelegateCommand protobufLicenseCommand;
+    private AsyncDelegateCommand? _protobufLicenseCommand;
 
-    public DelegateCommand ProtobufLicenseCommand => protobufLicenseCommand ??
-                                                     (protobufLicenseCommand =
-                                                         new DelegateCommand(ExecuteProtobufLicenseCommand));
+    public AsyncDelegateCommand ProtobufLicenseCommand => _protobufLicenseCommand ??= new AsyncDelegateCommand(ExecuteProtobufLicenseCommand);
 
     /// <summary>
     /// Google.Protobuf许可证查看事件
     /// </summary>
-    private void ExecuteProtobufLicenseCommand()
+    private async Task ExecuteProtobufLicenseCommand()
     {
-        PlatformHelper.Open("https://github.com/protocolbuffers/protobuf/blob/master/LICENSE");
+        await PlatformHelper.OpenUrl("https://github.com/protocolbuffers/protobuf/blob/master/LICENSE");
     }
 
     // Newtonsoft.Json许可证查看事件
-    private DelegateCommand newtonsoftLicenseCommand;
+    private AsyncDelegateCommand? _newtonsoftLicenseCommand;
 
-    public DelegateCommand NewtonsoftLicenseCommand => newtonsoftLicenseCommand ??
-                                                       (newtonsoftLicenseCommand =
-                                                           new DelegateCommand(ExecuteNewtonsoftLicenseCommand));
+    public AsyncDelegateCommand NewtonsoftLicenseCommand => _newtonsoftLicenseCommand ??= new AsyncDelegateCommand(ExecuteNewtonsoftLicenseCommand);
 
     /// <summary>
     /// Newtonsoft.Json许可证查看事件
     /// </summary>
-    private void ExecuteNewtonsoftLicenseCommand()
+    private async Task ExecuteNewtonsoftLicenseCommand()
     {
-        PlatformHelper.Open("https://licenses.nuget.org/MIT");
+        await PlatformHelper.OpenUrl("https://licenses.nuget.org/MIT");
     }
 
     // Prism.DryIoc许可证查看事件
-    private DelegateCommand prismLicenseCommand;
+    private AsyncDelegateCommand? _prismLicenseCommand;
 
-    public DelegateCommand PrismLicenseCommand => prismLicenseCommand ??
-                                                  (prismLicenseCommand =
-                                                      new DelegateCommand(ExecutePrismLicenseCommand));
+    public AsyncDelegateCommand PrismLicenseCommand => _prismLicenseCommand ??= new AsyncDelegateCommand(ExecutePrismLicenseCommand);
 
     /// <summary>
     /// Prism.DryIoc许可证查看事件
     /// </summary>
-    private void ExecutePrismLicenseCommand()
+    private async Task ExecutePrismLicenseCommand()
     {
-        PlatformHelper.Open("https://www.nuget.org/packages/Prism.DryIoc/8.1.97/license");
+        await PlatformHelper.OpenUrl("https://www.nuget.org/packages/Prism.DryIoc/8.1.97/license");
     }
 
     // QRCoder许可证查看事件
-    private DelegateCommand qRCoderLicenseCommand;
+    private AsyncDelegateCommand? _qRCoderLicenseCommand;
 
-    public DelegateCommand QRCoderLicenseCommand => qRCoderLicenseCommand ??
-                                                    (qRCoderLicenseCommand =
-                                                        new DelegateCommand(ExecuteQRCoderLicenseCommand));
+    public AsyncDelegateCommand QRCoderLicenseCommand => _qRCoderLicenseCommand ??= new AsyncDelegateCommand(ExecuteQRCoderLicenseCommand);
 
     /// <summary>
     /// QRCoder许可证查看事件
     /// </summary>
-    private void ExecuteQRCoderLicenseCommand()
+    private async Task ExecuteQRCoderLicenseCommand()
     {
-        PlatformHelper.Open("https://licenses.nuget.org/MIT");
+        await PlatformHelper.OpenUrl("https://licenses.nuget.org/MIT");
     }
 
     // System.Data.SQLite.Core许可证查看事件
-    private DelegateCommand sQLiteLicenseCommand;
+    private AsyncDelegateCommand? _sQLiteLicenseCommand;
 
-    public DelegateCommand SQLiteLicenseCommand => sQLiteLicenseCommand ??
-                                                   (sQLiteLicenseCommand =
-                                                       new DelegateCommand(ExecuteSQLiteLicenseCommand));
+    public AsyncDelegateCommand SQLiteLicenseCommand => _sQLiteLicenseCommand ??= new AsyncDelegateCommand(ExecuteSQLiteLicenseCommand);
 
     /// <summary>
     /// System.Data.SQLite.Core许可证查看事件
     /// </summary>
-    private void ExecuteSQLiteLicenseCommand()
+    private async Task ExecuteSQLiteLicenseCommand()
     {
-        PlatformHelper.Open("https://www.sqlite.org/copyright.html");
+        await PlatformHelper.OpenUrl("https://www.sqlite.org/copyright.html");
     }
 
     // Aria2c许可证查看事件
-    private DelegateCommand ariaLicenseCommand;
+    private AsyncDelegateCommand? _ariaLicenseCommand;
 
-    public DelegateCommand AriaLicenseCommand =>
-        ariaLicenseCommand ?? (ariaLicenseCommand = new DelegateCommand(ExecuteAriaLicenseCommand));
+    public AsyncDelegateCommand AriaLicenseCommand => _ariaLicenseCommand ??= new AsyncDelegateCommand(ExecuteAriaLicenseCommand);
 
     /// <summary>
     /// Aria2c许可证查看事件
     /// </summary>
-    private void ExecuteAriaLicenseCommand()
+    private async Task ExecuteAriaLicenseCommand()
     {
-        PlatformHelper.Open("aria2_COPYING.txt");
+        await PlatformHelper.Open("aria2_COPYING.txt");
     }
 
     // FFmpeg许可证查看事件
-    private DelegateCommand fFmpegLicenseCommand;
+    private AsyncDelegateCommand? _fFmpegLicenseCommand;
 
-    public DelegateCommand FFmpegLicenseCommand => fFmpegLicenseCommand ??
-                                                   (fFmpegLicenseCommand =
-                                                       new DelegateCommand(ExecuteFFmpegLicenseCommand));
+    public AsyncDelegateCommand FFmpegLicenseCommand => _fFmpegLicenseCommand ??= new AsyncDelegateCommand(ExecuteFFmpegLicenseCommand);
 
     /// <summary>
     /// FFmpeg许可证查看事件
     /// </summary>
-    private void ExecuteFFmpegLicenseCommand()
+    private async Task ExecuteFFmpegLicenseCommand()
     {
-        PlatformHelper.Open("FFmpeg_LICENSE.txt");
+        await PlatformHelper.Open("FFmpeg_LICENSE.txt");
     }
 
     #endregion

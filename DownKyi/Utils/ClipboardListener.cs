@@ -1,43 +1,45 @@
 using System;
-using System.Threading;
+using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Input.Platform;
+using Avalonia.Threading;
 
 namespace DownKyi.Utils;
 
-public class ClipboardListener
+public sealed class ClipboardListener : IDisposable
 {
     private readonly object _countLocker = new();
     private int _count;
+    private bool _disposed;
 
-    private Timer? _timer;
+    private DispatcherTimer? _timer;
     private Action<string>? _action;
-    private string? _meta;
-    private readonly SemaphoreSlim _tickSemaphore = new(1, 1);
-    private CancellationTokenSource? _cts;
+    private string? _lastClipboardContent;
 
     private readonly Window _mainWindow;
-
+    
+    private bool _isTicking;
     public ClipboardListener(Window mainWindow)
     {
-        _mainWindow = mainWindow;
+        _mainWindow = mainWindow ?? throw new ArgumentNullException(nameof(mainWindow));
     }
 
     private void RegisterSystemEvent(Action<string> action)
     {
+        ThrowIfDisposed();
         _action = action;
-        _timer = new Timer(InvokeTick, null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
+        _timer = new DispatcherTimer(
+            TimeSpan.FromSeconds(1), 
+            DispatcherPriority.Background, 
+            (_, _) => { _ = TickHandler(); });
+        _timer.Start();
     }
 
-    private void UnRegisterSystemEvent(Action<string> _)
+    private void UnRegisterSystemEvent()
     {
-        _timer?.Dispose();
+        _timer?.Stop();
         _timer = null;
-
         _action = null;
-
-        _cts?.Cancel();
-        _cts?.Dispose();
-        _cts = null;
     }
 
     private event Action<string>? ChangedImpl;
@@ -46,86 +48,75 @@ public class ClipboardListener
     {
         add
         {
+            ThrowIfDisposed();
             lock (_countLocker)
             {
                 if (_count == 0)
                 {
-                    _count++;
                     RegisterSystemEvent(NotifyAll);
                 }
+                _count++;
+                ChangedImpl += value;
             }
-
-            ChangedImpl += value;
         }
         remove
         {
-            ChangedImpl -= value;
             lock (_countLocker)
             {
-                _count--;
+                ChangedImpl -= value;
+                _count = Math.Max(0, _count - 1); 
                 if (_count == 0)
                 {
-                    UnRegisterSystemEvent(NotifyAll);
+                    UnRegisterSystemEvent();
                 }
             }
         }
     }
 
-    private Action<string> NotifyAll => meta => { ChangedImpl?.Invoke(meta); };
+    private void NotifyAll(string content) => ChangedImpl?.Invoke(content);
 
-    private async void InvokeTick(object? _)
+    private async Task TickHandler()
     {
-        if (_tickSemaphore.Wait(0) is false)
-        {
-            return;
-        }
+        if (_disposed || _isTicking || _mainWindow.Clipboard == null) return;
 
         try
         {
-            _cts?.Dispose();
-            _cts = new CancellationTokenSource(TimeSpan.FromSeconds(1000));
+            _isTicking = true;
+            var currentContent = await _mainWindow.Clipboard.TryGetTextAsync();
 
-            var clipboard = _mainWindow.Clipboard;
-            if (clipboard == null)
+            if (string.Equals(currentContent, _lastClipboardContent, StringComparison.Ordinal))
             {
                 return;
             }
 
-            var meta = await clipboard.GetTextAsync();
-            if (meta == _meta)
+            if (_lastClipboardContent != null && !string.IsNullOrEmpty(currentContent))
             {
-                return;
+                _action?.Invoke(currentContent);
             }
 
-            if (_meta is not null)
-            {
-                _meta = meta;
-                if (meta != null) _action?.Invoke(meta);
-            }
-            else
-            {
-                _meta = meta;
-            }
-        }
-        catch
-        {
-            // ignored
+            _lastClipboardContent = currentContent;
         }
         finally
         {
-            _tickSemaphore.Release();
+            _isTicking = false;
         }
     }
 
-    ~ClipboardListener()
+    private void ThrowIfDisposed()
     {
-        Dispose();
+        if (_disposed) throw new ObjectDisposedException(nameof(ClipboardListener));
     }
 
     public void Dispose()
     {
-        ChangedImpl = null;
-        UnRegisterSystemEvent(NotifyAll);
-        _count = 0;
+        lock (_countLocker) 
+        {
+            if (_disposed) return;
+            _disposed = true;
+            
+            UnRegisterSystemEvent();
+            ChangedImpl = null;
+        }
+        GC.SuppressFinalize(this);
     }
 }

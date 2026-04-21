@@ -1,6 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System.Collections.ObjectModel;
+using System.Linq;
 using System.Threading.Tasks;
-using Avalonia.Threading;
 using DownKyi.Core.Settings;
 using DownKyi.Core.Settings.Models;
 using DownKyi.Core.Utils;
@@ -16,7 +16,7 @@ namespace DownKyi.ViewModels.Dialogs;
 public class ViewDownloadSetterViewModel : BaseDialogViewModel
 {
     public const string Tag = "DialogDownloadSetter";
-    private readonly IEventAggregator eventAggregator;
+    private readonly IEventAggregator _eventAggregator;
 
     // 历史文件夹的数量
     private const int MaxDirectoryListCount = 20;
@@ -47,13 +47,9 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
         set => SetProperty(ref _isDefaultDownloadDirectory, value);
     }
 
-    private List<string> _directoryList;
 
-    public List<string> DirectoryList
-    {
-        get => _directoryList;
-        set => SetProperty(ref _directoryList, value);
-    }
+    public ObservableCollection<string> DirectoryList { get; set; }
+    
 
     private string _directory;
 
@@ -138,7 +134,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
 
     public ViewDownloadSetterViewModel(IEventAggregator eventAggregator)
     {
-        this.eventAggregator = eventAggregator;
+        _eventAggregator = eventAggregator;
 
         #region 属性初始化
 
@@ -169,7 +165,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
         }
 
         // 历史下载目录
-        DirectoryList = SettingsManager.GetInstance().GetHistoryVideoRootPaths();
+        DirectoryList = new ObservableCollection<string>(SettingsManager.GetInstance().GetHistoryVideoRootPaths());
         var directory = SettingsManager.GetInstance().GetSaveVideoRootPath();
         if (!DirectoryList.Contains(directory))
         {
@@ -179,7 +175,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
         Directory = directory;
 
         // 是否使用默认下载目录
-        IsDefaultDownloadDirectory = SettingsManager.GetInstance().IsUseSaveVideoRootPath() == AllowStatus.YES;
+        IsDefaultDownloadDirectory = SettingsManager.GetInstance().GetIsUseSaveVideoRootPath() == AllowStatus.Yes;
 
         #endregion
     }
@@ -200,8 +196,7 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
 
         if (directory == null)
         {
-            eventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("WarningNullDirectory"));
-            Directory = string.Empty;
+            _eventAggregator.GetEvent<MessageEvent>().Publish(DictionaryResource.GetString("WarningNullDirectory"));
         }
         else
         {
@@ -376,16 +371,16 @@ public class ViewDownloadSetterViewModel : BaseDialogViewModel
         }
 
         // 设此文件夹为默认下载文件夹
-        SettingsManager.GetInstance().IsUseSaveVideoRootPath(IsDefaultDownloadDirectory ? AllowStatus.YES : AllowStatus.NO);
+        SettingsManager.GetInstance().SetIsUseSaveVideoRootPath(IsDefaultDownloadDirectory ? AllowStatus.Yes : AllowStatus.No);
 
         // 将Directory移动到第一项
         // 如果直接在ComboBox中选择的就需要
         // 否则选中项不会在下次出现在第一项
-        ListHelper.InsertUnique(DirectoryList, Directory, 0);
+        ListHelper.InsertUnique(DirectoryList, Directory, 0,ref _directory);
 
         // 将更新后的DirectoryList写入历史中
         SettingsManager.GetInstance().SetSaveVideoRootPath(Directory);
-        SettingsManager.GetInstance().SetHistoryVideoRootPaths(DirectoryList);
+        SettingsManager.GetInstance().SetHistoryVideoRootPaths(DirectoryList.ToList());
 
         // 返回数据
         IDialogParameters parameters = new DialogParameters

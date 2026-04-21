@@ -1,16 +1,22 @@
 ﻿using System;
+using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Threading;
 using DownKyi.Core.Settings;
 using DownKyi.Events;
+using DownKyi.Models;
 using DownKyi.Services;
 using DownKyi.Utils;
+using DownKyi.ViewModels.Dialogs;
 using Prism.Commands;
 using Prism.Events;
 using Prism.Mvvm;
 using Prism.Regions;
+using Prism.Services.Dialogs;
+using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
 
 namespace DownKyi.ViewModels;
 
@@ -18,18 +24,16 @@ public class MainWindowViewModel : BindableBase
 {
     private readonly IEventAggregator _eventAggregator;
 
+    private readonly IRegionManager _regionManager;
+
+    private readonly IDialogService _dialogService;
+
+    private const string ContentRegion = nameof(ContentRegion);
+
     private ClipboardListener? _clipboardListener;
 
     private bool _messageVisibility;
     private string? _oldMessage;
-
-    private WindowState _winState;
-
-    public WindowState WinState
-    {
-        get => _winState;
-        set => SetProperty(ref _winState, value);
-    }
 
     public bool MessageVisibility
     {
@@ -46,11 +50,13 @@ public class MainWindowViewModel : BindableBase
     }
 
     public DelegateCommand? LoadedCommand { get; }
-    public DelegateCommand<PointerPressedEventArgs> DragMoveCommand { get; private set; }
 
     private DelegateCommand? _closingCommand;
 
     public DelegateCommand ClosingCommand => _closingCommand ??= _closingCommand = new DelegateCommand(ExecuteClosingCommand);
+
+    public DelegateCommand<PointerPressedEventArgs> PointerPressedCommand =>
+        new(ExecutePointerPressed);
 
     private void ExecuteClosingCommand()
     {
@@ -59,10 +65,30 @@ public class MainWindowViewModel : BindableBase
         _clipboardListener.Dispose();
     }
 
+    private void ExecutePointerPressed(PointerPressedEventArgs e)
+    {
+        var point = e.GetCurrentPoint(null);
+        var updateKind = point.Properties.PointerUpdateKind;
+        if (updateKind == PointerUpdateKind.XButton1Pressed)
+        {
+            var v = GetCurrentUserControl()?.DataContext;
+            if (v is ViewModelBase vm)
+            {
+                vm.ExecuteBackSpace();
+                e.Handled = true;
+            }
+        }
+    }
 
-    public MainWindowViewModel(IRegionManager regionManager, IEventAggregator eventAggregator)
+    private UserControl? GetCurrentUserControl() => _regionManager
+        .Regions[ContentRegion].ActiveViews
+        .FirstOrDefault() as UserControl;
+
+    public MainWindowViewModel(IRegionManager regionManager, IEventAggregator eventAggregator, IDialogService dialogService)
     {
         _eventAggregator = eventAggregator;
+        _regionManager = regionManager;
+        _dialogService = dialogService;
 
         #region MyRegion
 
@@ -73,7 +99,7 @@ public class MainWindowViewModel : BindableBase
                 { "Parent", view.ParentViewName },
                 { "Parameter", view.Parameter }
             };
-            regionManager.RequestNavigate("ContentRegion", view.ViewName, param);
+            regionManager.RequestNavigate(ContentRegion, view.ViewName, param);
         });
 
         // 订阅消息发送事件
@@ -99,6 +125,12 @@ public class MainWindowViewModel : BindableBase
 
         LoadedCommand = new DelegateCommand(() =>
         {
+            if (Design.IsDesignMode)
+            {
+               return;
+            }
+            Upgrade();
+            CheckForUpdates();
             _clipboardListener = new ClipboardListener(App.Current.MainWindow);
             _clipboardListener.Changed += ClipboardListenerOnChanged;
             var param = new NavigationParameters
@@ -106,43 +138,7 @@ public class MainWindowViewModel : BindableBase
                 { "Parent", "" },
                 { "Parameter", "start" }
             };
-            regionManager.RequestNavigate("ContentRegion", ViewIndexViewModel.Tag, param);
-        });
-
-        var times = 0;
-
-        DragMoveCommand = new DelegateCommand<PointerPressedEventArgs>(e =>
-        {
-            Window mainWindow = App.Current.MainWindow;
-            // caption 双击事件
-            times += 1;
-            var timer = new DispatcherTimer
-            {
-                Interval = new TimeSpan(0, 0, 0, 0, 300)
-            };
-            timer.Tick += (_, _) =>
-            {
-                timer.IsEnabled = false;
-                times = 0;
-            };
-            timer.IsEnabled = true;
-
-            if (times % 2 == 0)
-            {
-                timer.IsEnabled = false;
-                times = 0;
-                WinState = WinState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-            }
-
-            // caption 拖动事件
-            try
-            {
-                mainWindow.BeginMoveDrag(e);
-            }
-            catch
-            {
-                // ignored
-            }
+            _regionManager.RequestNavigate("ContentRegion", ViewIndexViewModel.Tag, param);
         });
     }
 
@@ -175,8 +171,8 @@ public class MainWindowViewModel : BindableBase
 
         #endregion
 
-        var isListenClipboard = SettingsManager.GetInstance().IsListenClipboard();
-        if (isListenClipboard != AllowStatus.YES)
+        var isListenClipboard = SettingsManager.GetInstance().GetIsListenClipboard();
+        if (isListenClipboard != AllowStatus.Yes)
         {
             return;
         }
@@ -186,4 +182,30 @@ public class MainWindowViewModel : BindableBase
     }
 
     #endregion
+
+    private void Upgrade()
+    {
+        _dialogService.ShowDialogAsync(ViewUpgradingDialogViewModel.Tag, new DialogParameters(), (result) => { });
+    }
+    
+    private async void CheckForUpdates()
+    {
+        try
+        {
+            var isAutoUpdate = SettingsManager.GetInstance().GetAutoUpdateWhenLaunch() != AllowStatus.Yes;
+            if(isAutoUpdate) return;
+            var service = new VersionCheckerService(App.RepoOwner,App.RepoName,
+                SettingsManager.GetInstance().GetIsReceiveBetaVersion() == AllowStatus.Yes);
+            var release = await service.GetLatestReleaseAsync(SettingsManager.GetInstance().GetSkipVersionOnLaunch());
+            if (release != null && service.IsNewVersionAvailable(release.TagName))
+            {
+                await _dialogService?.ShowDialogAsync(NewVersionAvailableDialogViewModel.Tag, new 
+                    DialogParameters { { "release", release },{"enableSkipVersion",true} })!;
+            }
+        }
+        catch (Exception ex)
+        {
+            /**/
+        }
+    }
 }

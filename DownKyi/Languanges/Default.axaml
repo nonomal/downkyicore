@@ -149,6 +149,7 @@
     <system:String x:Key="Parsing">正在解析……</system:String>
     <system:String x:Key="WhileDownloading">下载中……</system:String>
     <system:String x:Key="MixedFlow">混流中……</system:String>
+    <system:String x:Key="ConcatVideos">视频合并中……</system:String>
     <system:String x:Key="Pausing">暂停中……</system:String>
     <system:String x:Key="Waiting">等待中……</system:String>
     <system:String x:Key="DownloadFailed">下载失败</system:String>
@@ -159,7 +160,8 @@
     <system:String x:Key="DeleteAllDownloading">全部删除</system:String>
     <system:String x:Key="TotalDownloaded1">已下载</system:String>
     <system:String x:Key="TotalDownloaded2">个视频！</system:String>
-    <system:String x:Key="DownloadedSortByTime">按下载先后排序</system:String>
+    <system:String x:Key="DownloadedSortByTimeAsc">按下载时间升序</system:String>
+    <system:String x:Key="DownloadedSortByTimeDesc">按下载时间降序</system:String>
     <system:String x:Key="DownloadedSortByOrder">按序号排序</system:String>
     <system:String x:Key="ClearAllDownloaded">清空所有记录</system:String>
     <system:String x:Key="StartDownload">开始</system:String>
@@ -192,6 +194,10 @@
     <system:String x:Key="Network">网络</system:String>
     <system:String x:Key="UseSSL">启用https（若下载器提示SSL错误，则关闭此项）</system:String>
     <system:String x:Key="UserAgent">UserAgent：</system:String>
+    <system:String x:Key="NetworkProxySetting">网络代理设置</system:String>
+    <system:String x:Key="NetworkProxyNone">无</system:String>
+    <system:String x:Key="NetworkProxySystem">使用系统代理</system:String>
+    <system:String x:Key="NetworkProxyCustom">使用自定义代理</system:String>
     <system:String x:Key="SelectDownloader">选择下载器（重启生效）：</system:String>
     <system:String x:Key="BuiltinDownloader">内建下载器</system:String>
     <system:String x:Key="Aria2cDownloader">Aria2下载器</system:String>
@@ -219,6 +225,7 @@
     <system:String x:Key="IsTranscodingFlvToMp4">下载FLV视频后转码为mp4</system:String>
     <system:String x:Key="IsTranscodingAacToMp3">下载AAC音频后转码为mp3</system:String>
     <system:String x:Key="IsUseDefaultDirectory">使用默认下载目录</system:String>
+    <system:String x:Key="GenerateVideoMetadata">生成视频元数据</system:String>
     <system:String x:Key="DefaultDirectory">默认下载目录：</system:String>
     <system:String x:Key="DefaultDirectoryTip">默认将文件下载到该文件夹中</system:String>
     <system:String x:Key="ChangeDirectory">更改目录</system:String>
@@ -311,6 +318,9 @@
     <system:String x:Key="Warning">警告</system:String>
     <system:String x:Key="Error">错误</system:String>
     <system:String x:Key="Allow">确定</system:String>
+    <system:String x:Key="ActionUpdate">前往下载</system:String>
+    <system:String x:Key="SkipCurrentVersion">跳过此版本</system:String>
+    <system:String x:Key="NewVersionTitle">更新提示</system:String>
     <system:String x:Key="Cancel">取消</system:String>
     <system:String x:Key="ConfirmReboot">此项需重启生效，您确定要重新启动吗？</system:String>
     <system:String x:Key="ConfirmDelete">您确定要删除吗？</system:String>
@@ -349,5 +359,9 @@
     <system:String x:Key="Yes">是</system:String>
     <system:String x:Key="No">否</system:String>
     <system:String x:Key="ApplyToAll">全部应用</system:String>
-
+    
+    
+    <!-- CustomControl -->
+    <system:String x:Key="Page">页</system:String>
+    <system:String x:Key="JumpTo">跳至</system:String>
 </ResourceDictionary>

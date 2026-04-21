@@ -1,14 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using DownKyi.Core.BiliApi.BiliUtils;
 using DownKyi.Core.BiliApi.Models;
 using DownKyi.Core.BiliApi.VideoStream.Models;
-using DownKyi.Core.Logging;
-using DownKyi.Core.Utils;
+using Newtonsoft.Json;
 using Prism.Commands;
 using Prism.Mvvm;
-using Console = DownKyi.Core.Utils.Debugging.Console;
 
 namespace DownKyi.ViewModels.PageViewModels;
 
@@ -23,6 +20,8 @@ public class VideoPage : BindableBase
     public VideoOwner Owner { get; set; }
     public string PublishTime { get; set; }
 
+    public DateTime OriginalPublishTime { get; set; }
+    
     public string FirstFrame { get; set; }
 
     public int Page { get; set; }
@@ -96,15 +95,16 @@ public class VideoPage : BindableBase
         get => videoQuality;
         set => SetProperty(ref videoQuality, value);
     }
+    
+    [JsonIgnore] 
+    public Lazy<List<string>?> LazyTags { get; set; }
 
     #region
 
     // 视频画质选择事件
-    private DelegateCommand videoQualitySelectedCommand;
+    private DelegateCommand _videoQualitySelectedCommand;
 
-    public DelegateCommand VideoQualitySelectedCommand => videoQualitySelectedCommand ??
-                                                          (videoQualitySelectedCommand =
-                                                              new DelegateCommand(ExecuteVideoQualitySelectedCommand));
+    public DelegateCommand VideoQualitySelectedCommand => _videoQualitySelectedCommand ??= new DelegateCommand(ExecuteVideoQualitySelectedCommand);
 
     /// <summary>
     /// 视频画质选择事件

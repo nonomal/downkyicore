@@ -87,15 +87,13 @@ public static class Format
     /// <returns></returns>
     public static string FormatSpeed(float speed)
     {
-        string formatSpeed = speed switch
+        return speed switch
         {
             <= 0 => "0B/s",
             < 1024 => $"{speed:F2}B/s",
             < 1024 * 1024 => $"{speed / 1024:F2}KB/s",
             _ => $"{speed / 1024 / 1024:F2}MB/s"
         };
-
-        return formatSpeed;
     }
 
     /// <summary>
@@ -105,16 +103,14 @@ public static class Format
     /// <returns></returns>
     public static string FormatFileSize(long fileSize)
     {
-        string formatFileSize = fileSize switch
+        return fileSize switch
         {
             <= 0 => "0B",
-            < 1024 => fileSize.ToString() + "B",
+            < 1024 => fileSize + "B",
             < 1024 * 1024 => (fileSize / 1024.0).ToString("#.##") + "KB",
             < 1024 * 1024 * 1024 => (fileSize / 1024.0 / 1024.0).ToString("#.##") + "MB",
             _ => (fileSize / 1024.0 / 1024.0 / 1024.0).ToString("#.##") + "GB"
         };
-
-        return formatFileSize;
     }
 
     /// <summary>
@@ -125,36 +121,15 @@ public static class Format
     public static string FormatFileName(string originName)
     {
         var destName = originName;
-
-        // Windows中不能作为文件名的字符
-        // destName = destName.Replace("\\", " ");
-        // destName = destName.Replace("/", " ");
-        // destName = destName.Replace(":", " ");
-        // destName = destName.Replace("*", " ");
-        // destName = destName.Replace("?", " ");
-        // destName = destName.Replace("\"", " ");
-        // destName = destName.Replace("<", " ");
-        // destName = destName.Replace(">", " ");
-        // destName = destName.Replace("|", " ");
-
-        // 转义字符
-        // destName = destName.Replace("\a", "");
-        // destName = destName.Replace("\b", "");
-        // destName = destName.Replace("\f", "");
-        // destName = destName.Replace("\n", "");
-        // destName = destName.Replace("\r", "");
-        // destName = destName.Replace("\t", "");
-        // destName = destName.Replace("\v", "");
         destName = Path.GetInvalidFileNameChars().Aggregate(destName, (current, c) => current.Replace(c.ToString(), string.Empty));
 
-        // 控制字符
+        var cleanedName = destName
+             .SkipWhile(c => c is ' ' or '.')
+             .Reverse()
+             .SkipWhile(c => c is ' ' or '.')
+             .Reverse()
+             .ToArray();
 
-
-        // 移除前导和尾部的空白字符、dot符
-        destName = destName.Trim();
-        destName = destName.Trim('.');
-
-        // 如果只有空白字符、dot符
-        return destName is " " or "." ? "[empty title]" : destName;
+       return new string(cleanedName);
     }
 }

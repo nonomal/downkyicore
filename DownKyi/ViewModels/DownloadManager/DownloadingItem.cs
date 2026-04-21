@@ -1,21 +1,17 @@
 ﻿using DownKyi.Core.BiliApi.VideoStream.Models;
 using DownKyi.Images;
 using DownKyi.Models;
-using DownKyi.Services;
 using DownKyi.Utils;
+using Downloader;
 using Prism.Commands;
-using Prism.Services.Dialogs;
-using IDialogService = DownKyi.PrismExtension.Dialog.IDialogService;
+using DownloadStatus = DownKyi.Models.DownloadStatus;
 
 namespace DownKyi.ViewModels.DownloadManager
 {
     public class DownloadingItem : DownloadBaseItem
     {
-        public DownloadingItem() : this(null)
-        {
-        }
 
-        public DownloadingItem(IDialogService dialogService) : base(dialogService)
+        public DownloadingItem()
         {
             // 暂停继续按钮
             StartOrPause = ButtonIcon.Instance().Pause;
@@ -25,41 +21,48 @@ namespace DownKyi.ViewModels.DownloadManager
             Delete = ButtonIcon.Instance().Delete;
             Delete.Fill = DictionaryResource.GetColor("ColorPrimary");
         }
+        
+        public DownloadService? DownloadService;
 
         // model数据
-        private Downloading downloading;
+        private Downloading _downloading;
+        
+        
+        public MovieMetadata? Metadata { get; set; } 
+
         public Downloading Downloading
         {
-            get => downloading;
+            get => _downloading;
             set
             {
-                downloading = value;
+                _downloading = value;
 
                 switch (value.DownloadStatus)
                 {
-                    case DownloadStatus.NOT_STARTED:
-                    case DownloadStatus.WAIT_FOR_DOWNLOAD:
+                    case DownloadStatus.NotStarted:
+                    case DownloadStatus.WaitForDownload:
                         StartOrPause = ButtonIcon.Instance().Pause;
                         break;
-                    case DownloadStatus.PAUSE_STARTED:
+                    case DownloadStatus.PauseStarted:
                         StartOrPause = ButtonIcon.Instance().Start;
                         break;
-                    case DownloadStatus.PAUSE:
+                    case DownloadStatus.Pause:
                         StartOrPause = ButtonIcon.Instance().Start;
                         break;
-                    case DownloadStatus.DOWNLOADING:
+                    case DownloadStatus.Downloading:
                         StartOrPause = ButtonIcon.Instance().Pause;
                         break;
-                    case DownloadStatus.DOWNLOAD_SUCCEED:
+                    case DownloadStatus.DownloadSucceed:
                         // 下载成功后会从下载列表中删除
                         // 不会出现此分支
                         break;
-                    case DownloadStatus.DOWNLOAD_FAILED:
+                    case DownloadStatus.DownloadFailed:
                         StartOrPause = ButtonIcon.Instance().Retry;
                         break;
                     default:
                         break;
                 }
+
                 StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
             }
         }
@@ -68,24 +71,24 @@ namespace DownKyi.ViewModels.DownloadManager
         public PlayUrl PlayUrl { get; set; }
 
         // 正在下载内容（音频、视频、弹幕、字幕、封面）
-        public string DownloadContent
+        public string? DownloadContent
         {
             get => Downloading.DownloadContent;
             set
             {
                 Downloading.DownloadContent = value;
-                RaisePropertyChanged("DownloadContent");
+                RaisePropertyChanged();
             }
         }
 
         // 下载状态显示
-        public string DownloadStatusTitle
+        public string? DownloadStatusTitle
         {
             get => Downloading.DownloadStatusTitle;
             set
             {
                 Downloading.DownloadStatusTitle = value;
-                RaisePropertyChanged("DownloadStatusTitle");
+                RaisePropertyChanged();
             }
         }
 
@@ -96,49 +99,51 @@ namespace DownKyi.ViewModels.DownloadManager
             set
             {
                 Downloading.Progress = value;
-                RaisePropertyChanged("Progress");
+                RaisePropertyChanged();
             }
         }
 
         //  已下载大小/文件大小
-        public string DownloadingFileSize
+        public string? DownloadingFileSize
         {
             get => Downloading.DownloadingFileSize;
             set
             {
                 Downloading.DownloadingFileSize = value;
-                RaisePropertyChanged("DownloadingFileSize");
+                RaisePropertyChanged();
             }
         }
 
         //  下载速度
-        public string SpeedDisplay
+        public string? SpeedDisplay
         {
             get => Downloading.SpeedDisplay;
             set
             {
                 Downloading.SpeedDisplay = value;
-                RaisePropertyChanged("SpeedDisplay");
+                RaisePropertyChanged();
             }
         }
 
         // 操作提示
-        private string operationTip;
+        private string _operationTip;
+
         public string OperationTip
         {
-            get => operationTip;
-            set => SetProperty(ref operationTip, value);
+            get => _operationTip;
+            set => SetProperty(ref _operationTip, value);
         }
 
         #region 控制按钮
 
-        private VectorImage startOrPause;
+        private VectorImage _startOrPause;
+
         public VectorImage StartOrPause
         {
-            get => startOrPause;
+            get => _startOrPause;
             set
             {
-                SetProperty(ref startOrPause, value);
+                SetProperty(ref _startOrPause, value);
 
                 OperationTip = value.Equals(ButtonIcon.Instance().Start) ? DictionaryResource.GetString("StartDownload")
                     : value.Equals(ButtonIcon.Instance().Pause) ? DictionaryResource.GetString("PauseDownload")
@@ -146,11 +151,12 @@ namespace DownKyi.ViewModels.DownloadManager
             }
         }
 
-        private VectorImage delete;
+        private VectorImage _delete;
+
         public VectorImage Delete
         {
-            get => delete;
-            set => SetProperty(ref delete, value);
+            get => _delete;
+            set => SetProperty(ref _delete, value);
         }
 
         #endregion
@@ -158,8 +164,8 @@ namespace DownKyi.ViewModels.DownloadManager
         #region 命令申明
 
         // 下载列表暂停继续事件
-        private DelegateCommand startOrPauseCommand;
-        public DelegateCommand StartOrPauseCommand => startOrPauseCommand ?? (startOrPauseCommand = new DelegateCommand(ExecuteStartOrPauseCommand));
+        private DelegateCommand? _startOrPauseCommand;
+        public DelegateCommand StartOrPauseCommand => _startOrPauseCommand ??= new DelegateCommand(ExecuteStartOrPauseCommand);
 
         /// <summary>
         /// 下载列表暂停继续事件
@@ -168,38 +174,38 @@ namespace DownKyi.ViewModels.DownloadManager
         {
             switch (Downloading.DownloadStatus)
             {
-                case DownloadStatus.NOT_STARTED:
-                case DownloadStatus.WAIT_FOR_DOWNLOAD:
-                    Downloading.DownloadStatus = DownloadStatus.PAUSE_STARTED;
+                case DownloadStatus.NotStarted:
+                case DownloadStatus.WaitForDownload:
+                    Downloading.DownloadStatus = DownloadStatus.PauseStarted;
                     DownloadStatusTitle = DictionaryResource.GetString("Pausing");
                     StartOrPause = ButtonIcon.Instance().Start;
                     StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
                     break;
-                case DownloadStatus.PAUSE_STARTED:
-                    Downloading.DownloadStatus = DownloadStatus.WAIT_FOR_DOWNLOAD;
+                case DownloadStatus.PauseStarted:
+                    Downloading.DownloadStatus = DownloadStatus.WaitForDownload;
                     DownloadStatusTitle = DictionaryResource.GetString("Waiting");
                     StartOrPause = ButtonIcon.Instance().Pause;
                     StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
                     break;
-                case DownloadStatus.PAUSE:
-                    Downloading.DownloadStatus = DownloadStatus.WAIT_FOR_DOWNLOAD;
+                case DownloadStatus.Pause:
+                    Downloading.DownloadStatus = DownloadStatus.WaitForDownload;
                     DownloadStatusTitle = DictionaryResource.GetString("Waiting");
                     StartOrPause = ButtonIcon.Instance().Pause;
                     StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
                     break;
                 //case DownloadStatus.PAUSE_TO_WAIT:
-                case DownloadStatus.DOWNLOADING:
-                    Downloading.DownloadStatus = DownloadStatus.PAUSE;
+                case DownloadStatus.Downloading:
+                    Downloading.DownloadStatus = DownloadStatus.Pause;
                     DownloadStatusTitle = DictionaryResource.GetString("Pausing");
                     StartOrPause = ButtonIcon.Instance().Start;
                     StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
                     break;
-                case DownloadStatus.DOWNLOAD_SUCCEED:
+                case DownloadStatus.DownloadSucceed:
                     // 下载成功后会从下载列表中删除
                     // 不会出现此分支
                     break;
-                case DownloadStatus.DOWNLOAD_FAILED:
-                    Downloading.DownloadStatus = DownloadStatus.WAIT_FOR_DOWNLOAD;
+                case DownloadStatus.DownloadFailed:
+                    Downloading.DownloadStatus = DownloadStatus.WaitForDownload;
                     DownloadStatusTitle = DictionaryResource.GetString("Waiting");
                     StartOrPause = ButtonIcon.Instance().Pause;
                     StartOrPause.Fill = DictionaryResource.GetColor("ColorPrimary");
@@ -209,26 +215,6 @@ namespace DownKyi.ViewModels.DownloadManager
             }
         }
 
-        // 下载列表删除事件
-        private DelegateCommand? deleteCommand;
-        public DelegateCommand DeleteCommand => deleteCommand ??= new DelegateCommand(ExecuteDeleteCommand);
-
-        /// <summary>
-        /// 下载列表删除事件
-        /// </summary>
-        private async void ExecuteDeleteCommand()
-        {
-            var alertService = new AlertService(DialogService);
-            var result = await alertService.ShowWarning(DictionaryResource.GetString("ConfirmDelete"), 2);
-            if (result != ButtonResult.OK)
-            {
-                return;
-            }
-            
-            App.DownloadingList.Remove(this);
-        }
-
         #endregion
-
     }
 }

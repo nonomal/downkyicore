@@ -11,7 +11,6 @@ using DownKyi.Core.BiliApi.Zone;
 using DownKyi.Core.FileName;
 using DownKyi.Core.Logging;
 using DownKyi.Core.Settings;
-using DownKyi.Core.Settings.Models;
 using DownKyi.Core.Utils;
 using DownKyi.Events;
 using DownKyi.Models;
@@ -32,8 +31,9 @@ public class AddToDownloadService
 {
     private readonly string Tag = "AddToDownloadService";
     private IInfoService _videoInfoService;
-    private VideoInfoView _videoInfoView;
+    private VideoInfoView? _videoInfoView;
     private List<VideoSection>? _videoSections;
+    private DownloadStorageService _downloadStorageService = (DownloadStorageService)App.Current.Container.Resolve(typeof(DownloadStorageService));
 
     // 下载内容
     private bool _downloadAudio = true;
@@ -50,13 +50,13 @@ public class AddToDownloadService
     {
         switch (streamType)
         {
-            case PlayStreamType.VIDEO:
+            case PlayStreamType.Video:
                 _videoInfoService = new VideoInfoService(null);
                 break;
-            case PlayStreamType.BANGUMI:
+            case PlayStreamType.Bangumi:
                 _videoInfoService = new BangumiInfoService(null);
                 break;
-            case PlayStreamType.CHEESE:
+            case PlayStreamType.Cheese:
                 _videoInfoService = new CheeseInfoService(null);
                 break;
             default:
@@ -73,13 +73,13 @@ public class AddToDownloadService
     {
         switch (streamType)
         {
-            case PlayStreamType.VIDEO:
+            case PlayStreamType.Video:
                 _videoInfoService = new VideoInfoService(id);
                 break;
-            case PlayStreamType.BANGUMI:
+            case PlayStreamType.Bangumi:
                 _videoInfoService = new BangumiInfoService(id);
                 break;
-            case PlayStreamType.CHEESE:
+            case PlayStreamType.Cheese:
                 _videoInfoService = new CheeseInfoService(id);
                 break;
             default:
@@ -92,17 +92,10 @@ public class AddToDownloadService
         _videoInfoService = videoInfoService;
     }
 
-    public void GetVideo(VideoInfoView videoInfoView, List<VideoSection> videoSections, List<int> selectedVideo)
+    public void GetVideo(VideoInfoView videoInfoView, List<VideoSection> videoSections)
     {
         _videoInfoView = videoInfoView;
         _videoSections = videoSections;
-        foreach (var section in videoSections.Where(videoSection => videoSection.IsSelected))
-        {
-            foreach (var item in section.VideoPages)
-            {
-                item.IsSelected = selectedVideo.Contains(item.Order);
-            }
-        }
     }
 
     public void GetVideo()
@@ -166,13 +159,14 @@ public class AddToDownloadService
     /// 选择文件夹和下载项
     /// </summary>
     /// <param name="dialogService"></param>
-    public async Task<string?> SetDirectory(IDialogService dialogService)
+    public async Task<string?> SetDirectory(IDialogService? dialogService)
     {
+        if (dialogService == null) return null;
         // 选择的下载文件夹
         var directory = string.Empty;
 
         // 是否使用默认下载目录
-        if (SettingsManager.GetInstance().IsUseSaveVideoRootPath() == AllowStatus.YES)
+        if (SettingsManager.GetInstance().GetIsUseSaveVideoRootPath() == AllowStatus.Yes)
         {
             // 下载内容
             var videoContent = SettingsManager.GetInstance().GetVideoContent();
@@ -241,8 +235,7 @@ public class AddToDownloadService
     /// <param name="directory">下载路径</param>
     /// <param name="isAll">是否下载所有，包括未选中项</param>
     /// <returns>添加的数量</returns>
-    public async Task<int> AddToDownload(IEventAggregator eventAggregator, IDialogService dialogService,
-        string? directory, bool isAll = false)
+    public async Task<int> AddToDownload(IEventAggregator eventAggregator, IDialogService? dialogService, string? directory, bool isAll = false)
     {
         if (string.IsNullOrEmpty(directory))
         {
@@ -296,6 +289,8 @@ public class AddToDownloadService
 
                 // 如果存在正在下载列表，则跳过，并提示
                 var isDownloading = false;
+
+
                 foreach (var item in App.DownloadingList)
                 {
                     if (item.DownloadBase == null)
@@ -303,9 +298,16 @@ public class AddToDownloadService
                         continue;
                     }
 
-                    if (item.DownloadBase.Cid == page.Cid && item.Resolution.Id == page.VideoQuality.Quality &&
-                        item.AudioCodec.Name == page.AudioQualityFormat &&
-                        item.VideoCodecName == page.VideoQuality.SelectedVideoCodec)
+                    bool isSameVideo = item.DownloadBase.Cid == page.Cid &&
+                                       item.Resolution.Id == page.VideoQuality.Quality &&
+                                       item.VideoCodecName == page.VideoQuality.SelectedVideoCodec;
+                    
+                    if (page.PlayUrl.Dash != null)
+                    {
+                        isSameVideo = isSameVideo && item.AudioCodec.Name == page.AudioQualityFormat;
+                    }
+
+                    if (isSameVideo)
                     {
                         eventAggregator.GetEvent<MessageEvent>()
                             .Publish($"{page.Name}{DictionaryResource.GetString("TipAlreadyToAddDownloading")}");
@@ -328,9 +330,16 @@ public class AddToDownloadService
                         continue;
                     }
 
-                    if (item.DownloadBase.Cid == page.Cid && item.Resolution.Id == page.VideoQuality.Quality &&
-                        item.AudioCodec.Name == page.AudioQualityFormat &&
-                        item.VideoCodecName == page.VideoQuality.SelectedVideoCodec)
+                    bool isSameVideo = item.DownloadBase.Cid == page.Cid &&
+                                       item.Resolution.Id == page.VideoQuality.Quality &&
+                                       item.VideoCodecName == page.VideoQuality.SelectedVideoCodec;
+                    
+                    if (page.PlayUrl.Dash != null)
+                    {
+                        isSameVideo = isSameVideo && item.AudioCodec.Name == page.AudioQualityFormat;
+                    }
+
+                    if (isSameVideo)
                     {
                         // eventAggregator.GetEvent<MessageEvent>().Publish($"{page.Name}{DictionaryResource.GetString("TipAlreadyToAddDownloaded")}");
                         // isDownloaded = true;
@@ -347,13 +356,16 @@ public class AddToDownloadService
                                         { "message", $"{item.Name}已下载，是否重新下载" },
                                     };
 
-                                    await dialogService.ShowDialogAsync(ViewAlreadyDownloadedDialogViewModel.Tag, param,
-                                        buttonResult => { result = buttonResult.Result; });
+                                    await dialogService.ShowDialogAsync(ViewAlreadyDownloadedDialogViewModel.Tag, param, buttonResult => { result = buttonResult.Result; });
                                 });
 
                                 if (result == ButtonResult.OK)
                                 {
-                                    App.PropertyChangeAsync(() => { App.DownloadedList.Remove(item); });
+                                    App.PropertyChangeAsync(() =>
+                                    {
+                                        App.DownloadedList.Remove(item);
+                                        _downloadStorageService.RemoveDownloaded(item);
+                                    });
                                     isDownloaded = false;
                                 }
                                 else
@@ -386,7 +398,7 @@ public class AddToDownloadService
                 // 视频分区
                 var zoneId = -1;
                 var zoneList = VideoZone.Instance().GetZones();
-                var zone = zoneList.Find(it => it.Id == _videoInfoView.TypeId);
+                var zone = zoneList.Find(it => it.Id == _videoInfoView?.TypeId);
                 if (zone != null)
                 {
                     if (zone.ParentId == 0)
@@ -435,10 +447,10 @@ public class AddToDownloadService
                 var orderFormat = SettingsManager.GetInstance().GetOrderFormat();
                 switch (orderFormat)
                 {
-                    case OrderFormat.NATURAL:
+                    case OrderFormat.Natural:
                         fileName.SetOrder(page.Order);
                         break;
-                    case OrderFormat.LEADING_ZEROS:
+                    case OrderFormat.LeadingZeros:
                         fileName.SetOrder(page.Order, section.VideoPages.Count);
                         break;
                 }
@@ -475,14 +487,14 @@ public class AddToDownloadService
                 switch (_videoInfoView.TypeId)
                 {
                     case -10:
-                        playStreamType = PlayStreamType.CHEESE;
+                        playStreamType = PlayStreamType.Cheese;
                         break;
                     case 13:
                     case 23:
                     case 177:
                     case 167:
                     case 11:
-                        playStreamType = PlayStreamType.BANGUMI;
+                        playStreamType = PlayStreamType.Bangumi;
                         break;
                     case 1:
                     case 3:
@@ -501,7 +513,7 @@ public class AddToDownloadService
                     case 5:
                     case 181:
                     default:
-                        playStreamType = PlayStreamType.VIDEO;
+                        playStreamType = PlayStreamType.Video;
                         break;
                 }
 
@@ -519,21 +531,19 @@ public class AddToDownloadService
                         PageCoverUrl = page.FirstFrame,
                         ZoneId = zoneId,
                         FilePath = filePath,
-
                         Order = page.Order,
                         MainTitle = _videoInfoView.Title,
                         Name = page.Name,
                         Duration = page.Duration,
                         VideoCodecName = page.VideoQuality.SelectedVideoCodec,
-                        Resolution = new Quality
-                            { Name = page.VideoQuality.QualityFormat, Id = page.VideoQuality.Quality },
+                        Resolution = new Quality { Name = page.VideoQuality.QualityFormat, Id = page.VideoQuality.Quality },
                         AudioCodec = Constant.GetAudioQualities().FirstOrDefault(t => { return t.Name == page.AudioQualityFormat; }),
                         Page = page.Page
                     };
                     var downloading = new Downloading
                     {
                         PlayStreamType = playStreamType,
-                        DownloadStatus = DownloadStatus.NOT_STARTED,
+                        DownloadStatus = DownloadStatus.NotStarted,
                     };
 
                     // 需要下载的内容
@@ -550,6 +560,13 @@ public class AddToDownloadService
                         PlayUrl = page.PlayUrl,
                     };
 
+                    if (SettingsManager.GetInstance().GetVideoContent()
+                            .GenerateMovieMetadata && _downloadVideo)
+                    {
+                        downloadingItem.Metadata = BuildMovieMetadata(page);
+                    }
+
+                    _downloadStorageService.AddDownloading(downloadingItem);
                     App.DownloadingList.Add(downloadingItem);
                     Thread.Sleep(10);
                 });
@@ -558,5 +575,34 @@ public class AddToDownloadService
         }
 
         return i;
+    }
+    
+
+    private MovieMetadata BuildMovieMetadata(VideoPage page)
+    {
+        var metadata = new MovieMetadata
+        {
+            Title = page.Name,
+            Plot = _videoInfoView.Description,
+            Year = page.OriginalPublishTime.Year.ToString(),
+            Premiered = page.OriginalPublishTime.ToString("yyyy-MM-dd"),
+            BilibiliId = new UniqueId("bilibili", page.Bvid),
+            Actors = new List<Actor> { new(page.Owner.Name, page.Owner.Mid.ToString()) },
+            Genres = _videoInfoView.VideoZone?.Split(">")?.ToList() ?? new List<string>(),
+            Tags = page.LazyTags?.Value ?? new List<string>(),
+            Ratings = _videoInfoView.Score != null
+                ? new List<Rating>
+                {
+                    new()
+                    {
+                        IsDefault = true,
+                        Max = 10,
+                        Name = "bilibili",
+                        Value = _videoInfoView.Score.Value
+                    }
+                }
+                : new List<Rating>()
+        };
+        return metadata;
     }
 }

@@ -5,6 +5,8 @@
 /// </summary>
 public class AboutSettings
 {
-    public AllowStatus IsReceiveBetaVersion { get; set; } = AllowStatus.NONE;
-    public AllowStatus AutoUpdateWhenLaunch { get; set; } = AllowStatus.NONE;
+    public AllowStatus IsReceiveBetaVersion { get; set; } = AllowStatus.None;
+    public AllowStatus AutoUpdateWhenLaunch { get; set; } = AllowStatus.None;
+    
+    public string SkipVersionOnLaunch  { get; set; } = string.Empty;
 }

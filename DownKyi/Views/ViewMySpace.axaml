@@ -1,13 +1,17 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="DownKyi.Views.ViewMySpace"
-             xmlns:i="using:Avalonia.Xaml.Interactivity"
-             xmlns:ia="clr-namespace:Avalonia.Xaml.Interactions.Core;assembly=Avalonia.Xaml.Interactions"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DesignWidth="840"
+             d:DesignHeight="620"
              xmlns:custom="clr-namespace:DownKyi.CustomControl"
              xmlns:prism="http://prismlibrary.com/"
              prism:ViewModelLocator.AutoWireViewModel="True"
              xmlns:vm="clr-namespace:DownKyi.ViewModels"
              xmlns:vmp="clr-namespace:DownKyi.ViewModels.PageViewModels"
+             xmlns:asyncImageLoader="clr-namespace:DownKyi.CustomControl.AsyncImageLoader"
              x:DataType="vm:ViewMySpaceViewModel">
     <UserControl.Resources>
         <ControlTheme x:Key="SpaceStyle" TargetType="{x:Type ListBox}">
@@ -30,7 +34,7 @@
                 Grid.Row="0"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
-                Source="{Binding Background}"
+                asyncImageLoader:ImageLoader.Source="{Binding Background}"
                 Stretch="UniformToFill" />
 
             <Grid Grid.Row="0" VerticalAlignment="Bottom" RowDefinitions="*,20" ColumnDefinitions="100,*">
@@ -39,7 +43,7 @@
                     Grid.Column="0"
                     Width="64"
                     Height="64"
-                    Source="{Binding Header}">
+                    asyncImageLoader:ImageLoader.Source="{Binding Header}">
                     <Image.Clip>
                         <!--  设置图像如何显示  -->
                         <EllipseGeometry
@@ -193,8 +197,7 @@
                             BorderThickness="0"
                             Maximum="{Binding MaxExp}"
                             Minimum="0"
-                            Value="{Binding ExpProgress}">
-                        </ProgressBar>
+                            Value="{Binding ExpProgress}" />
 
                     </StackPanel>
                 </Grid>
@@ -207,11 +210,11 @@
                     SelectedIndex="{Binding SelectedStatus}"
                     SelectionMode="Single"
                     Theme="{StaticResource SpaceStyle}">
-                    <i:Interaction.Behaviors>
-                        <ia:EventTriggerBehavior EventName="SelectionChanged">
-                            <ia:InvokeCommandAction Command="{Binding StatusListCommand}" />
-                        </ia:EventTriggerBehavior>
-                    </i:Interaction.Behaviors>
+                    <Interaction.Behaviors>
+                        <EventTriggerBehavior EventName="SelectionChanged">
+                            <InvokeCommandAction Command="{Binding StatusListCommand}" />
+                        </EventTriggerBehavior>
+                    </Interaction.Behaviors>
 
                     <ListBox.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -255,11 +258,11 @@
                     SelectedIndex="{Binding SelectedPackage}"
                     SelectionMode="Single"
                     Theme="{StaticResource SpaceStyle}">
-                    <i:Interaction.Behaviors>
-                        <ia:EventTriggerBehavior EventName="SelectionChanged">
-                            <ia:InvokeCommandAction Command="{Binding PackageListCommand}" />
-                        </ia:EventTriggerBehavior>
-                    </i:Interaction.Behaviors>
+                    <Interaction.Behaviors>
+                        <EventTriggerBehavior EventName="SelectionChanged">
+                            <InvokeCommandAction Command="{Binding PackageListCommand}" />
+                        </EventTriggerBehavior>
+                    </Interaction.Behaviors>
                     <ListBox.ItemsPanel>
                         <ItemsPanelTemplate>
                             <UniformGrid Columns="6" />

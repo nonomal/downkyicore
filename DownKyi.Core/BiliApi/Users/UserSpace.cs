@@ -1,6 +1,7 @@
 ﻿using DownKyi.Core.BiliApi.Sign;
 using DownKyi.Core.BiliApi.Users.Models;
 using DownKyi.Core.Logging;
+using DownKyi.Core.Storage;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Console = DownKyi.Core.Utils.Debugging.Console;
@@ -43,7 +44,7 @@ public static class UserSpace
     /// </summary>
     /// <param name="mid">用户id</param>
     /// <returns></returns>
-    public static List<SpacePublicationListTypeVideoZone?> GetPublicationType(long mid)
+    public static List<SpacePublicationListTypeVideoZone>? GetPublicationType(long mid)
     {
         const int pn = 1;
         const int ps = 1;
@@ -54,22 +55,24 @@ public static class UserSpace
     /// <summary>
     /// 获取用户投稿视频的所有分区
     /// </summary>
-    /// <param name="mid">用户id</param>
+    /// <param name="publication"></param>
     /// <returns></returns>
-    public static List<SpacePublicationListTypeVideoZone?> GetPublicationType(SpacePublicationList? publication)
+    public static List<SpacePublicationListTypeVideoZone>? GetPublicationType(SpacePublicationList? publication)
     {
         if (publication?.Tlist == null)
         {
             return null;
         }
 
-        var result = new List<SpacePublicationListTypeVideoZone?>();
+        var result = new List<SpacePublicationListTypeVideoZone>();
         var typeList = JObject.Parse(publication.Tlist.ToString("N"));
         foreach (KeyValuePair<string, JToken> item in typeList)
         {
             var value = JsonConvert.DeserializeObject<SpacePublicationListTypeVideoZone>(item.Value.ToString());
-            result.Add(value);
+            if (value != null)
+                result.Add(value);
         }
+
         return result;
     }
 
@@ -93,7 +96,9 @@ public static class UserSpace
 
             var data = GetPublication(mid, i, ps, tid, order, keyword);
             if (data?.Vlist == null || data.Vlist.Count == 0)
-            { break; }
+            {
+                break;
+            }
 
             result.AddRange(data.Vlist);
         }
@@ -113,7 +118,7 @@ public static class UserSpace
     /// <returns></returns>
     public static SpacePublicationList? GetPublication(long mid, int pn, int ps, long tid = 0, PublicationOrder order = PublicationOrder.PUBDATE, string keyword = "")
     {
-        var parameters = new Dictionary<string, object>
+        var parameters = new Dictionary<string, object?>
         {
             { "mid", mid },
             { "pn", pn },
@@ -122,6 +127,14 @@ public static class UserSpace
             { "tid", tid },
             { "keyword", keyword },
         };
+        if (!File.Exists(StorageManager.GetLogin()))
+        {
+            parameters.Add("dm_img_str", "V2ViR0wgMS");
+            parameters.Add("dm_img_list", "[]");
+            parameters.Add("dm_cover_img_str", "QU5HTEUgKE5WSURJQSwgTlZJRElBIEdlRm9yY2UgR1RYIDk4MCBEaXJlY3QzRDExIHZzXzVfMCBwc181XzApLCBvciBzaW1pbGFyR29vZ2xlIEluYy4gKE5WSURJQS");
+            parameters.Add("dm_img_inter", "{\"ds\":[],\"wh\":[0,0,0],\"of\":[0,0,0]}");
+        }
+
         var query = WbiSign.ParametersToQuery(WbiSign.EncodeWbi(parameters));
         var url = $"https://api.bilibili.com/x/space/wbi/arc/search?{query}";
         const string referer = "https://www.bilibili.com";
@@ -134,8 +147,7 @@ public static class UserSpace
             {
                 Error = (sender, args) =>
                 {
-                    if (Equals(args.ErrorContext.Member, "play") &&
-                        args.ErrorContext.OriginalObject.GetType() == typeof(SpacePublicationListVideo))
+                    if (Equals(args.ErrorContext.Member, "play") && args.ErrorContext.OriginalObject?.GetType() == typeof(SpacePublicationListVideo))
                     {
                         args.ErrorContext.Handled = true;
                     }
@@ -199,10 +211,13 @@ public static class UserSpace
 
             var data = GetChannelVideoList(mid, cid, i, ps);
             if (data?.Count == 0)
-            { break; }
+            {
+                break;
+            }
 
             result.AddRange(data);
         }
+
         return result;
     }
 
@@ -247,7 +262,7 @@ public static class UserSpace
     public static SpaceSeasonsSeries? GetSeasonsSeries(long mid, int pageNum, int pageSize)
     {
         // https://api.bilibili.com/x/polymer/space/seasons_series_list?mid=49246269&page_num=1&page_size=18
-        var url = $"https://api.bilibili.com/x/polymer/space/seasons_series_list?mid={mid}&page_num={pageNum}&page_size={pageSize}";
+        var url = $"https://api.bilibili.com/x/polymer/web-space/seasons_series_list?mid={mid}&page_num={pageNum}&page_size={pageSize}";
         const string referer = "https://www.bilibili.com";
         var response = WebClient.RequestWeb(url, referer);
 
@@ -274,7 +289,7 @@ public static class UserSpace
     public static SpaceSeasonsDetail? GetSeasonsDetail(long mid, long seasonId, int pageNum, int pageSize)
     {
         // https://api.bilibili.com/x/polymer/space/seasons_archives_list?mid=23947287&season_id=665&sort_reverse=false&page_num=1&page_size=30
-        var url = $"https://api.bilibili.com/x/polymer/space/seasons_archives_list?mid={mid}&season_id={seasonId}&page_num={pageNum}&page_size={pageSize}&sort_reverse=false";
+        var url = $"https://api.bilibili.com/x/polymer/web-space/seasons_archives_list?mid={mid}&season_id={seasonId}&page_num={pageNum}&page_size={pageSize}&sort_reverse=false";
         const string referer = "https://www.bilibili.com";
         var response = WebClient.RequestWeb(url, referer);
 
@@ -348,6 +363,7 @@ public static class UserSpace
     #endregion
 
     #region 课程
+
     /// <summary>
     /// 查询用户发布的课程列表
     /// </summary>
@@ -387,14 +403,17 @@ public static class UserSpace
         while (true)
         {
             i++;
-            var ps = 50;
+            const int ps = 50;
 
             var data = GetCheese(mid, i, ps);
             if (data == null || data.Count == 0)
-            { break; }
+            {
+                break;
+            }
 
             result.AddRange(data);
         }
+
         return result;
     }
 
@@ -447,13 +466,15 @@ public static class UserSpace
 
             var data = GetBangumiFollow(mid, type, i, ps);
             if (data?.List == null || data.List.Count == 0)
-            { break; }
+            {
+                break;
+            }
 
             result.AddRange(data.List);
         }
+
         return result;
     }
 
     #endregion
-
 }

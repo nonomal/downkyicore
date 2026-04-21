@@ -1,59 +1,77 @@
-﻿namespace DownKyi.Core.BiliApi.BiliUtils;
+﻿using System.Numerics;
+
+namespace DownKyi.Core.BiliApi.BiliUtils;
 
 public static class BvId
 {
-    private const string tableStr = "fZodR9XQDSUm21yCkr6zBqiveYah8bt4xsWpHnJE7jL5VG3guMTKNPAwcF"; //码表
-    private static readonly char[] table = tableStr.ToCharArray();
+    // 常量定义
+    private static readonly BigInteger XorCode = BigInteger.Parse("23442827791579");
+    private static readonly BigInteger MaskCode = BigInteger.Parse("2251799813685247");
+    private static readonly BigInteger MaxAid = BigInteger.One << 51;
+    private const long Base = 58;
 
-    private static readonly char[] tr = new char[124]; //反查码表
-    private const ulong Xor = 177451812; //固定异或值
-    private const ulong add = 8728348608; //固定加法值
-    private static readonly int[] s = { 11, 10, 3, 8, 4, 6 }; //位置编码表
+    // Base58字符集
+    private const string Data = "FcwAPNKTMug3GV5Lj7EJnHpWsx4tb8haYeviqBz6rkCy12mUSDQX9RdoZf";
+
+    // 为了提高BvToAv的性能，预先构建字符到索引的映射
+    private static readonly Dictionary<char, int> DataMap;
 
     static BvId()
     {
-        Tr_init();
-    }
-
-    //初始化反查码表
-    private static void Tr_init()
-    {
-        for (int i = 0; i < 58; i++)
-            tr[table[i]] = (char)i;
+        DataMap = new Dictionary<char, int>();
+        for (var i = 0; i < Data.Length; i++)
+        {
+            DataMap[Data[i]] = i;
+        }
     }
 
     /// <summary>
-    /// bvid转avid
+    /// 将av号转换为bv号
     /// </summary>
-    /// <param name="bvid"></param>
-    /// <returns></returns>
-    public static ulong Bv2Av(string bvid)
+    /// <param name="aid">av号 (aid)</param>
+    /// <returns>bv号 (bvid)</returns>
+    public static string Av2Bv(long aid)
     {
-        char[] bv = bvid.ToCharArray();
+        var bytes = new[] { 'B', 'V', '1', '0', '0', '0', '0', '0', '0', '0', '0', '0' };
+        var bvIndex = bytes.Length - 1;
 
-        ulong r = 0;
-        ulong av;
-        for (int i = 0; i < 6; i++)
-            r += tr[bv[s[i]]] * (ulong)Math.Pow(58, i);
-        av = (r - add) ^ Xor;
-        return av;
+        var tmp = (MaxAid | aid) ^ XorCode;
+
+        while (tmp > 0)
+        {
+            var index = (int)(tmp % Base);
+            bytes[bvIndex] = Data[index];
+            tmp /= Base;
+            bvIndex--;
+        }
+
+        (bytes[3], bytes[9]) = (bytes[9], bytes[3]);
+        (bytes[4], bytes[7]) = (bytes[7], bytes[4]);
+
+        return new string(bytes);
     }
 
     /// <summary>
-    /// avid转bvid
+    /// 将bv号转换为av号
     /// </summary>
-    /// <param name="av"></param>
-    /// <returns></returns>
-    public static string Av2Bv(ulong av)
+    /// <param name="bvid">bv号 (bvid)</param>
+    /// <returns>av号 (aid)</returns>
+    public static long Bv2Av(string bvid)
     {
-        //编码结果
-        string res = "BV1  4 1 7  ";
-        char[] result = res.ToCharArray();
+        var bvidArr = bvid.ToCharArray();
 
-        av = (av ^ Xor) + add;
-        for (int i = 0; i < 6; i++)
-            result[s[i]] = table[av / (ulong)Math.Pow(58, i) % 58];
-        string bv = new string(result);
-        return bv;
+        (bvidArr[3], bvidArr[9]) = (bvidArr[9], bvidArr[3]);
+        (bvidArr[4], bvidArr[7]) = (bvidArr[7], bvidArr[4]);
+
+        BigInteger tmp = 0;
+
+        for (var i = 3; i < bvidArr.Length; i++)
+        {
+            tmp = tmp * Base + DataMap[bvidArr[i]];
+        }
+
+        var result = (tmp & MaskCode) ^ XorCode;
+
+        return (long)result;
     }
 }

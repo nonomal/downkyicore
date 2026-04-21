@@ -1,19 +1,24 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <TargetFramework>net6.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <RuntimeIdentifier>$([System.Runtime.InteropServices.RuntimeInformation]::RuntimeIdentifier)</RuntimeIdentifier>
+        <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' And '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)'=='X64'">win-x64</RuntimeIdentifier>
+        <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' And '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)'=='X86'">win-x86</RuntimeIdentifier>
+        <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' And '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)'=='Arm64'">linux-arm64</RuntimeIdentifier>
+        <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' And '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)'=='X64'">linux-x64</RuntimeIdentifier>
+        <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX)))' And '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)'=='X64'">osx-x64</RuntimeIdentifier>
+        <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::OSX)))' And '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)'=='Arm64'">osx-arm64</RuntimeIdentifier>
     </PropertyGroup>
     <ItemGroup>
-        <PackageReference Include="Avalonia" Version="11.1.999-cibuild0042781-beta" />
-        <PackageReference Include="FFMpegCore" Version="5.1.0"/>
-        <PackageReference Include="Google.Protobuf" Version="3.25.1"/>
-        <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="8.0.0"/>
-        <PackageReference Include="Newtonsoft.Json" Version="13.0.3"/>
-        <PackageReference Include="QRCoder" Version="1.4.3"/>
-        <PackageReference Include="SQLitePCLRaw.bundle_e_sqlcipher" Version="2.1.7"/>
+        <PackageReference Include="Avalonia"/>
+        <PackageReference Include="FFMpegCore"/>
+        <PackageReference Include="Google.Protobuf"/>
+        <PackageReference Include="Microsoft.Data.Sqlite.Core"/>
+        <PackageReference Include="Newtonsoft.Json"/>
+        <PackageReference Include="QRCoder"/>
+        <PackageReference Include="SQLitePCLRaw.bundle_e_sqlcipher"/>
     </ItemGroup>
 
     <ItemGroup>
@@ -24,5 +29,4 @@
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
     </ItemGroup>
-
 </Project>

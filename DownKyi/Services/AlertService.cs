@@ -9,11 +9,11 @@ namespace DownKyi.Services;
 
 public class AlertService
 {
-    private readonly IDialogService dialogService;
+    private readonly IDialogService? _dialogService;
 
-    public AlertService(IDialogService dialogService)
+    public AlertService(IDialogService? dialogService)
     {
-        this.dialogService = dialogService;
+        _dialogService = dialogService;
     }
 
     /// <summary>
@@ -54,10 +54,10 @@ public class AlertService
         return ShowMessage(image, title, message, 1);
     }
 
-    public async Task<ButtonResult> ShowMessage(VectorImage image, string type, string message, int buttonNumber)
+    public async Task<ButtonResult> ShowMessage(VectorImage image, string title, string message, int buttonNumber)
     {
         var result = ButtonResult.None;
-        if (dialogService == null)
+        if (_dialogService == null)
         {
             return result;
         }
@@ -65,12 +65,12 @@ public class AlertService
         var param = new DialogParameters
         {
             { "image", image },
-            { "title", type },
+            { "title", title },
             { "message", message },
             { "button_number", buttonNumber }
         };
 
-        await dialogService.ShowDialogAsync(ViewAlertDialogViewModel.Tag, param, buttonResult => { result = buttonResult.Result; });
+        await _dialogService.ShowDialogAsync(ViewAlertDialogViewModel.Tag, param, buttonResult => { result = buttonResult.Result; });
         return result;
     }
 }

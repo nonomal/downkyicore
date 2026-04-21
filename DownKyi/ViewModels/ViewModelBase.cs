@@ -28,11 +28,16 @@ public class ViewModelBase : BindableBase, INavigationAware
     public virtual void OnNavigatedTo(NavigationContext navigationContext)
     {
         Journal = navigationContext.NavigationService.Journal;
-        string viewName = navigationContext.Parameters.GetValue<string>("Parent");
+        var viewName = navigationContext.Parameters.GetValue<string>("Parent");
         if (viewName != null)
         {
             ParentView = viewName;
         }
+    }
+    
+    protected internal virtual void ExecuteBackSpace()
+    {
+      
     }
 
     public bool IsNavigationTarget(NavigationContext navigationContext)
@@ -61,4 +66,5 @@ public class ViewModelBase : BindableBase, INavigationAware
     {
         Dispatcher.UIThread.Invoke(callback);
     }
+    
 }

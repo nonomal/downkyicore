@@ -7,11 +7,12 @@ namespace DownKyi.Converter
     public class CountConverter : IValueConverter
     {
         public int Count { get; set; }
+        
 
         public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
         {
-            var i = (int)value > Count;
-            return (int)value > Count;
+            var i = (int?)value > Count;
+            return (int?)value > Count;
         }
 
         public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)

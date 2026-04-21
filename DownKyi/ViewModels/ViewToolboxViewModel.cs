@@ -13,7 +13,7 @@ namespace DownKyi.ViewModels
     {
         public const string Tag = "PageToolbox";
 
-        private readonly IRegionManager regionManager;
+        private readonly IRegionManager _regionManager;
 
         #region 页面属性申明
 
@@ -38,7 +38,7 @@ namespace DownKyi.ViewModels
         public ViewToolboxViewModel(IRegionManager regionManager, IEventAggregator eventAggregator) : base(
             eventAggregator)
         {
-            this.regionManager = regionManager;
+            _regionManager = regionManager;
 
             #region 属性初始化
 
@@ -62,7 +62,7 @@ namespace DownKyi.ViewModels
         /// <summary>
         /// 返回事件
         /// </summary>
-        private void ExecuteBackSpace()
+        protected internal override void ExecuteBackSpace()
         {
             var parameter = new NavigationParam
             {
@@ -89,18 +89,16 @@ namespace DownKyi.ViewModels
                 return;
             }
 
-            var param = new NavigationParameters();
-
             switch (tabHeader.Id)
             {
                 case 0:
-                    regionManager.RequestNavigate("ToolboxContentRegion", ViewBiliHelperViewModel.Tag, param);
+                    _regionManager.RequestNavigate("ToolboxContentRegion", ViewBiliHelperViewModel.Tag);
                     break;
                 case 1:
-                    regionManager.RequestNavigate("ToolboxContentRegion", ViewDelogoViewModel.Tag, param);
+                    _regionManager.RequestNavigate("ToolboxContentRegion", ViewDelogoViewModel.Tag);
                     break;
                 case 2:
-                    regionManager.RequestNavigate("ToolboxContentRegion", ViewExtractMediaViewModel.Tag, param);
+                    _regionManager.RequestNavigate("ToolboxContentRegion", ViewExtractMediaViewModel.Tag);
                     break;
             }
         }
@@ -117,11 +115,7 @@ namespace DownKyi.ViewModels
 
             // 进入设置页面时显示的设置项
             SelectTabId = 0;
-            PropertyChangeAsync(() =>
-            {
-                regionManager.RequestNavigate("ToolboxContentRegion", ViewBiliHelperViewModel.Tag,
-                    new NavigationParameters());
-            });
+            PropertyChangeAsync(() => { _regionManager.RequestNavigate("ToolboxContentRegion", ViewBiliHelperViewModel.Tag); });
         }
     }
 }
